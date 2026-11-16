@@ -206,7 +206,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | POST | `/api/worktree-resources/order` | body: `{path, focus: [{type,id}], related: [{type,id}]}` | 204 No Content |
 | POST | `/api/worktrees/delete` | body: `{path, delete_branch, force_directory, force_branch}`; 400 for a missing path | `{job, attached}`: starts a `worktree_delete` job on the path (see "Background jobs"); `attached` is true when one was already unfinished on it |
 | GET | `/api/jobs` | — | `{jobs: [job]}`, every visible job, oldest first, never null; a tab's first paint |
-| POST | `/api/jobs/answer` | body: `{id, answer}`, `answer` `"yes"` or `"no"` (else 400) | the job after the answer: running again, or `dismissed` when a no ended it; 404 unknown id, 409 when the job is not waiting on an answer |
+| POST | `/api/jobs/answer` | body: `{id, answer}`, `answer` `"yes"` or `"no"` (else 400) | the job after the answer: running again, or the job with `dismissed: true` when the answer ended it; 404 unknown id, 409 when the job is not waiting on an answer |
 | POST | `/api/jobs/retry` | body: `{id}` | the job, running again; 404, and 409 unless it is failed or interrupted |
 | POST | `/api/jobs/dismiss` | body: `{id}` | 204; 404, and 409 unless the job is finished |
 | GET | `/api/worktree-notes` | `path` (required) | `{notes, sync_cmux, updated_at?}`; empty notes when never saved |
@@ -774,11 +774,36 @@ the path.
 **Kinds.** A `jobs.Kind` is `{Name, Plan, Run, Answer}`: `Plan` lists every
 step a run will show (all `pending`), `Run` executes the stored request and
 calls `report` to upsert a step by key, and `Answer` turns a yes/no into the
-request to replay. Adding a kind is writing one and registering it in
-`Server.jobs()`; the manager, routes, stream, `worktree jobs` and the toasts
-need no change, though the frontend's `HEADLINES` (`JobToasts.tsx`) wants a
-line per question key. The kind names `worktree_create` and `worktree_delete`
+request to replay. The kind names `worktree_create` and `worktree_delete`
 are stored in rows and sent to the browser, so they are fixed.
+
+Contracts a kind must honour:
+
+- `Plan` and `Answer` are called under the manager's lock, so they must be
+  pure and quick (no DB, no network, no calls back into the manager).
+- `Run` must be replay-safe: every answer and every "Run again" runs it from
+  the top on the stored request, so already-done work has to report `skipped`.
+- `Answer` returns `(next, end, err)`. With `end=true` the job is dismissed
+  and nothing runs; otherwise `next` replaces the stored request and the job
+  runs again.
+- An `Outcome`'s `Result`, when non-nil, is kept on the job. Create sets
+  `{path, branch}` (`createResult`), which the toast's and modal's "Open
+  worktree" navigate to; delete sets none.
+- When a run parks (`needs_answer`) or ends, any step still `running` becomes
+  `pending`.
+
+**Adding a kind** is: the `jobs.Kind` in `jobs_kinds.go`, registered in
+`Server.jobs()`; a start route that validates the request and calls
+`startJob(w, kind, title, target, request)`, which is where the title and the
+dedupe target are chosen (`handleCreateWorktree`, `handleDeleteWorktree`), and
+its entry in the route table in `server.go`; the kind in the `Job.kind` union
+in `ui/src/api/types.ts`; a modal that uses `useModalJob`, with a branch for
+the kind in `JobModalHost.tsx` (anything but `worktree_delete` opens
+`NewWorktreeModal`); a `HEADLINES` entry per question key in `JobToasts.tsx`;
+and, if the kind leaves a `result`, the toast's `resultPath` rule, which
+today reads `result.path` of `worktree_create` only. The manager, the
+`/api/jobs*` routes, the stream, `worktree jobs` and `JobStepper` need no
+change.
 
 **What yes and no mean (`answerCreateJob`, `answerDeleteJob`).** Every answer
 is a flag set on the whole stored request, which the job then replays from the
@@ -794,9 +819,10 @@ top; there is no server-side session.
 **Finishing, expiry, dismissal.** A `succeeded` job with no failed step is a
 *clean success*: the manager dismisses it itself after `SuccessTTL` (10s). A
 success with a failed step (the cmux workspace step can fail without failing
-the job), a `failed`, an `interrupted` and a `needs_answer` job all stay until
-someone acts: `retry` (failed or interrupted only; the stored request runs
-again on the same job) or `dismiss` (finished jobs only). Dismissing deletes
+the job), a `failed` and an `interrupted` job stay until someone acts: `retry`
+(failed or interrupted only; the stored request runs again on the same job) or
+`dismiss` (finished jobs only). A `needs_answer` job stays until it is
+answered; neither `retry` nor `dismiss` applies to it. Dismissing deletes
 the row, then publishes the job once more with `dismissed: true`, which every
 tab removes. A wrong-state call is 409, not 400: the request was well formed,
 the job simply moved on, which is what a second tab acting on a stale view
@@ -833,7 +859,8 @@ not rows.
 the DB (`OpenRead`, no server or login; a missing or pre-jobs DB means no
 jobs). A job is *live* when its state is `running` and its recorded server pid
 is alive. `--running` keeps only live jobs; `--json` is `{schema_version,
-jobs[]}` with `live` and `current_step`. It always exits 0.
+jobs[]}` with `live` and `current_step`. It exits 0 whether or not there are jobs, including with no database
+or one older than jobs; a database it cannot read is an error.
 
 **`make install` and the force window.** `stop-running` depends on `build`,
 passes `NONINTERACTIVE` through, and (`scripts/stop-running.sh`) asks the
@@ -1525,7 +1552,8 @@ invalidating `["worktree-notes"]` and `["worktrees"]`
 change).
 
 Background jobs ride the same stream (`stream.go`, "Background jobs"). The
-handler subscribes to the job manager *before* it writes anything, then sends
+handler subscribes to the job manager before it sends the first heartbeat and
+the snapshot (after the stream's other registrations), then sends
 one `event: jobs` with `{"jobs":[…]}` (every visible job, never null) right
 after the first heartbeat, and one `event: job` per later change, whose data
 is the job itself; a dismissed job arrives once more with `dismissed: true`.
@@ -2773,7 +2801,8 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   showing (`attachJob`, counted, so a toast stays hidden until the last modal
   detaches) and which job's modal a toast asked for (`openJobModal`).
   `JobToasts` (mounted in `App.tsx`) is one toast per visible job, hidden
-  while attached: a spinner on the running step, the question on a
+  while attached: a spinner beside the title while the job runs and one on
+  each running step (`JobStepper`), the question on a
   `needs_answer` job (clickable, and with an explicit "Answer" button), "Open
   worktree" on a finished create, "Run again" on a failed or interrupted job,
   and a dismiss; its collapsed state is a per-job `localStorage` convenience.

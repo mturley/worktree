@@ -90,9 +90,10 @@ minutes serially; it now runs most tests in parallel.
     unfinished job exists per (kind, target), `Subscribe` returns the visible
     jobs and the change channel under one lock so nothing falls between them,
     and `Recover` marks a dead server's `running` rows `interrupted` at start.
-    A job kind is one `jobs.Kind` (`Plan`/`Run`/`Answer`) registered in
-    `Server.jobs()`, written in `internal/webui/jobs_kinds.go`; nothing else
-    needs to change to add one. Never writes anything but its own table. See
+    A job kind is one `jobs.Kind` (`Plan`/`Run`/`Answer`) in
+    `internal/webui/jobs_kinds.go`, registered in `Server.jobs()`, plus a start
+    route calling `startJob` and some frontend wiring; the architecture doc's
+    "Adding a kind" lists all of it. Never writes anything but its own table. See
     `docs/web-ui-architecture.md` "Background jobs".
   - `linked` — assembles the detail pane's "Linked Resources" tab (PR
     description links, Jira Git PR field / description / hierarchy / issue
