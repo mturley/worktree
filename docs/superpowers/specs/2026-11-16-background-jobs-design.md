@@ -196,9 +196,12 @@ is a field on `webui.Server`, never a package global.
 The old synchronous response shapes (`createWorktreeResponse`,
 `deleteWorktreeResponse`) go away; nothing else consumes them.
 
-**Stream:** `/api/stream` sends `event: job` with one full job as data
-whenever a job changes (including dismissal, so tabs drop it), and one such
-event per visible job on connect. `/mini`'s stream may ignore them.
+**Stream:** `/api/stream` sends `event: jobs` with every visible job when a
+stream connects — the tab replaces what it had, so a job dismissed while the
+tab slept does not linger — then `event: job` with one full job whenever a
+job changes (including dismissal, so tabs drop it). The snapshot and the
+subscription are taken together, so nothing falls between them. `/mini`'s
+stream may ignore them.
 
 **Visible** means: not dismissed, and not a clean `succeeded` job (no failed
 step) that finished more than ~10 seconds ago. Success expiring on the server, not in the tab,
