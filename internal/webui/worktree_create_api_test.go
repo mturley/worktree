@@ -69,26 +69,6 @@ func TestCreateWorktreeRejectsExistingWorktreeDir(t *testing.T) {
 	}
 }
 
-func TestCreateWorktreeFailureIs200WithOKFalse(t *testing.T) {
-	t.Parallel()
-	s := &Server{}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/worktrees/create", strings.NewReader(
-		`{"input":"my-branch","repo_root":"/definitely/not/a/repo"}`))
-	s.handleCreateWorktree(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 so the modal can show partial steps", rec.Code)
-	}
-	var got createWorktreeResponse
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got.OK {
-		t.Fatal("ok = true for a nonexistent repo root")
-	}
-}
-
 func TestCreateWorktreeRequestDecodesAllFields(t *testing.T) {
 	t.Parallel()
 	var req createWorktreeRequest

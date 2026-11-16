@@ -168,6 +168,13 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// a crash left behind (internal/cmux/peek.go).
 	cmux.ClearPeekScreenshots()
 
+	// Jobs a previous server left mid-run: mark them interrupted (and drop
+	// the clean successes nobody will dismiss now) before anything can start
+	// a new one.
+	if err := srv.RecoverJobs(); err != nil {
+		logger.Printf("recovering background jobs: %v", err)
+	}
+
 	// Start the in-process poll loop (Task 4 provides StartPolling).
 	stop := srv.StartPolling(2 * time.Minute)
 	defer stop()

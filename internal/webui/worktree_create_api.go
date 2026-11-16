@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/mturley/worktree/internal/addcheck"
 	"github.com/mturley/worktree/internal/config"
@@ -31,24 +32,16 @@ type createWorktreeRequest struct {
 	DeclineReset bool `json:"decline_reset"`
 }
 
-type createWorktreeResponse struct {
-	OK      bool                 `json:"ok"`
-	Confirm *worktreenew.Confirm `json:"confirm"`
-	Steps   []worktreenew.Step   `json:"steps"`
-	Path    string               `json:"path,omitempty"`
-	Branch  string               `json:"branch,omitempty"`
-	Error   string               `json:"error,omitempty"`
-}
-
 // handleCreateWorktree: POST /api/worktrees/create
 //
-// A pending confirmation comes back as 200 with a non-null `confirm`, never an
-// error status: "git wants an answer" and "the create broke" are the one
-// distinction the flow rests on. A hard failure is also 200 with ok:false, so
-// the modal renders the partial step list instead of an error page.
+// The create runs as a background job: this route only validates the request
+// and starts one, so a closed tab or a slept machine cannot strand a run
+// half-finished. Everything the client needs afterwards comes from
+// /api/jobs and the `job` stream events.
 //
-// There is no server-side session. The client answers by re-POSTing the whole
-// request with the matching flag set, and the runner replays from the top.
+// What the route still rejects itself is what no job should ever exist for: a
+// request too incomplete to name a worktree, and an input that was never a
+// branch to begin with.
 func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 	var req createWorktreeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,27 +69,12 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := s.createConfig()
-	if err != nil {
-		writeJSON(w, http.StatusOK, createWorktreeResponse{
-			OK: false, Steps: []worktreenew.Step{}, Error: err.Error(),
-		})
-		return
-	}
-
-	res := worktreenew.Run(s.DB, cfg, req.options(), nil)
-
-	out := createWorktreeResponse{
-		OK:      res.Err == nil,
-		Confirm: res.Confirm,
-		Steps:   res.Steps,
-		Path:    res.Path,
-		Branch:  res.Branch,
-	}
-	if res.Err != nil {
-		out.Error = res.Err.Error()
-	}
-	writeJSON(w, http.StatusOK, out)
+	// The target dedupes: a second request for the same input in the same
+	// repo attaches to the job already running rather than starting a rival
+	// one. A NUL joins the two halves because no path and no branch name can
+	// contain one, so no pair of (repo, input) can collide on it.
+	input := strings.TrimSpace(req.Input)
+	s.startJob(w, jobKindCreate, "New worktree "+input, req.RepoRoot+"\x00"+input, req)
 }
 
 // createConfig is the config a creation runs under. The live gates are what
