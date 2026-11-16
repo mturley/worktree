@@ -254,6 +254,7 @@ export function TaskRow({ task, selectedResource, ownWorktree, dragHandle, onSta
           <TaskLinkChip
             task={task}
             link={link}
+            selectedResource={selectedResource}
             onClick={(e) => {
               keepFromRow(e)
               if (link.worktree) navigate(`/worktree/${encodeURIComponent(link.worktree)}`)
@@ -275,8 +276,9 @@ export function TaskRow({ task, selectedResource, ownWorktree, dragHandle, onSta
  * resource chip previews it. The chip truncates, and the preview has the
  * full names.
  */
-function TaskLinkChip({ task, link, onClick }: {
+function TaskLinkChip({ task, link, selectedResource, onClick }: {
   task: Task
+  selectedResource?: ResourceKey
   link: NonNullable<ReturnType<typeof linkChip>>
   onClick: (e: React.MouseEvent) => void
 }) {
@@ -312,7 +314,11 @@ function TaskLinkChip({ task, link, onClick }: {
     </Badge>
   )
   if (link.worktree) return <WorktreeHoverCard path={link.worktree}>{chip}</WorktreeHoverCard>
-  if (focus?.kind === "resource" && focus.resource_type && focus.resource_id) {
+  // The "+N" chip beside the selected resource's own tasks stands for the
+  // OTHER links, so a preview of the selected resource would be the wrong one.
+  const isOwn = selectedResource && focus?.kind === "resource" &&
+    focus.resource_type === selectedResource.type && focus.resource_id === selectedResource.id
+  if (!isOwn && focus?.kind === "resource" && focus.resource_type && focus.resource_id) {
     return <ResourceHoverCard type={focus.resource_type} id={focus.resource_id}>{chip}</ResourceHoverCard>
   }
   return chip

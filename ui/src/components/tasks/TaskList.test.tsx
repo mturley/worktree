@@ -516,6 +516,14 @@ describe("TaskList", () => {
     expect(body.style.maxHeight).toBe("min(240px, 25dvh)")
     expect(body).toHaveStyle({ overflowY: "auto" })
   })
+
+  it("capped, the scroll box bleeds into the panel's left padding so a marked row's bar is not clipped", async () => {
+    wrap(<TaskList scope={{ kind: "all" }} maxRows={8} />)
+    await screen.findByText("beta two")
+    const body = screen.getByTestId("task-list-body")
+    expect(body.style.marginLeft).toBe("calc(-1 * var(--mantine-spacing-xs))")
+    expect(body.style.paddingLeft).toBe("var(--mantine-spacing-xs)")
+  })
 })
 
 /*

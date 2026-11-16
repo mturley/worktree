@@ -304,7 +304,7 @@ export function WorktreeDetailPage() {
   // The page header's measured height (see the ResizeObserver below).
   const headerRef = useRef<HTMLDivElement>(null)
   const [headerHeight, setHeaderHeight] = useState(0)
-  const tasks = useTasksPanel(taskScope, { selectedResource: selected ?? undefined })
+  const tasks = useTasksPanel(taskScope, { selectedResource: selectedResource ? { type: selectedResource.type, id: selectedResource.id } : undefined })
 
   // The sticky resource list has to start below the header, and the header's
   // height is not a constant: the worktree and cmux workspace names wrap, and
@@ -583,14 +583,14 @@ export function WorktreeDetailPage() {
       <Stack gap="sm">
         {tasks.panel}
         {detail || (
-        <Tabs value={narrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
-          <Tabs.List>
-            <Tabs.Tab value="resources">Resources</Tabs.Tab>
-            <Tabs.Tab value="activity">Activity</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
-          <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
-        </Tabs>
+          <Tabs value={narrowTab} onChange={(v) => setNarrowTab((v as NarrowTab | null) ?? "resources")}>
+            <Tabs.List>
+              <Tabs.Tab value="resources">Resources</Tabs.Tab>
+              <Tabs.Tab value="activity">Activity</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="resources" pt="md">{list}</Tabs.Panel>
+            <Tabs.Panel value="activity" pt="md">{unfiltered()}</Tabs.Panel>
+          </Tabs>
         )}
       </Stack>
     )

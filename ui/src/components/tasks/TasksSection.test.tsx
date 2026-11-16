@@ -28,12 +28,11 @@ const task = (id: number, extra: Partial<Task> = {}): Task => ({
 const ALL: TaskScope = { kind: "all" }
 
 /** A page's shape: the panel above its tab bar. */
-function Host({ scope = ALL, unread, testId = "host" }: {
+function Host({ scope = ALL, testId = "host" }: {
   scope?: TaskScope
-  unread?: number
   testId?: string
 }) {
-  const t = useTasksPanel(scope, { unread })
+  const t = useTasksPanel(scope)
   return (
     <div data-testid={testId} data-expanded={t.expanded}>
       {t.panel}
@@ -198,25 +197,10 @@ describe("useTasksPanel", () => {
     expect(panel()).toHaveAttribute("data-level", "normal")
   })
 
-  it("unread task events: a dot in the normal header and on the collapsed line", async () => {
-    wrap(<Host unread={2} />)
-    expect(within(panel()).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-    await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
-    const line = within(panel()).getByRole("button", { name: /^Expand task list/ })
-    expect(within(line).getByRole("img", { name: "unread task activity" })).toBeInTheDocument()
-  })
-
-  it("no unread task events: no dot", () => {
-    wrap(<Host unread={0} />)
-    expect(screen.queryByRole("img", { name: "unread task activity" })).toBeNull()
-  })
-
-  it("the collapsed line's name carries the count and the unread state", async () => {
-    const { rerender } = wrap(<Host unread={2} />)
+  it("the collapsed line's name carries the count", async () => {
+    wrap(<Host />)
     await within(panel()).findByText("Tasks (all)")
     await userEvent.click(within(panel()).getByRole("button", { name: /^Collapse task list/ }))
-    expect(within(panel()).getByRole("button", { name: "Expand task list (2 not started, unread activity)" })).toBeInTheDocument()
-    rerender(<Host unread={0} />)
     expect(within(panel()).getByRole("button", { name: "Expand task list (2 not started)" })).toBeInTheDocument()
   })
 })

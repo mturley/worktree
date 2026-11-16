@@ -104,7 +104,8 @@ describe("TaskQuickAdd priority", () => {
     expect(screen.getByRole("option", { name: /Medium/ })).toHaveTextContent("!!")
     fireEvent.click(screen.getByRole("option", { name: /High/ }))
     // The chosen value's glyph sits in the input's left section.
-    expect(select.closest(".mantine-Select-root, .mantine-InputWrapper-root")!).toHaveTextContent("!!!")
+    const left = select.closest(".mantine-Select-root, .mantine-InputWrapper-root")!.querySelector("[data-position=left]")
+    expect(left).toHaveTextContent("!!!")
   })
 })
 

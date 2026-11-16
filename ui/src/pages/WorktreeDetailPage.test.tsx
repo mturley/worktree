@@ -1581,5 +1581,8 @@ describe("WorktreeDetailPage tasks", () => {
     const panel = screen.getByTestId("tasks-panel")
     expect(await within(panel).findByText("Tidy the branch")).toBeInTheDocument()
     expect(panel.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await userEvent.click(back)
+    await screen.findByRole("tab", { name: "Resources" })
+    expect(screen.getByTestId("tasks-panel")).toBe(panel)
   })
 })

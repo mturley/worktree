@@ -498,7 +498,19 @@ export function TaskList({ scope, selectedResource, maxRows, expand }: {
       <Box
         ref={overflows.ref}
         data-testid="task-list-body"
-        style={cap !== undefined ? { maxHeight: cappedMaxHeight(cap), overflowY: "auto" } : undefined}
+        // Capped, the scroll box clips on x too, so it bleeds into the panel's
+        // left padding (xs = 10px, matching padding) to leave room for the
+        // marked rows' bar there; nothing shifts.
+        style={
+          cap !== undefined
+            ? {
+                maxHeight: cappedMaxHeight(cap),
+                overflowY: "auto",
+                marginLeft: "calc(-1 * var(--mantine-spacing-xs))",
+                paddingLeft: "var(--mantine-spacing-xs)",
+              }
+            : undefined
+        }
       >
         {/* Observed for overflow: under a holding cap only this grows. */}
         <div ref={overflows.contentRef}>{body}</div>

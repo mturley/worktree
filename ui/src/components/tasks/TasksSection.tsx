@@ -11,7 +11,6 @@ import type { ResourceKey } from "../../lib/resourceKey"
 import { scopeContext } from "../../lib/taskScope"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
-import { UnreadMarkerDot } from "../UnreadMarkerDot"
 
 /** Rows the normal panel shows before its list scrolls inside itself. */
 const NORMAL_ROWS = 8
@@ -34,10 +33,6 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  *   scope puts the panel back to normal. A tab change does not: tabs live in
  *   the query string.
  *
- * `opts.unread` is the unread task events behind the list, for a page whose
- * other tabs cannot show them (a Slack thread's pane); above 0 an unread dot
- * sits by the count, at every level.
- *
  * `opts.selectedResource` is the resource selected on the page: its tasks are
  * marked in the list, and new tasks are created in it.
  *
@@ -48,14 +43,13 @@ export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
  */
 export function useTasksPanel(
   scope: TaskScope,
-  opts?: { selectedResource?: ResourceKey; unread?: number },
+  opts?: { selectedResource?: ResourceKey },
 ): { panel: ReactNode; expanded: boolean; tasks: Task[] } {
   const [prefs, setPrefs] = useTaskListPrefs()
   const { collapsed } = prefs
   // The same query (and cache entry) the list itself uses.
   const query = useTasks(scope, { completed: prefs.showCompleted, archived: prefs.includeArchived })
   const open = openSummary(query.data ?? [])
-  const unread = (opts?.unread ?? 0) > 0
   const [location] = useLocation()
 
   // Expanded is the key it was set under: once path or scope moves
@@ -100,7 +94,7 @@ export function useTasksPanel(
     <UnstyledButton
       // Leads with what it does; the count and the dot are in here too, or a
       // screen reader would hear neither.
-      aria-label={`${action} (${open}${unread ? ", unread activity" : ""})`}
+      aria-label={`${action} (${open})`}
       aria-expanded={!collapsed}
       onClick={cycle}
       className="task-panel-toggle"
@@ -125,7 +119,6 @@ export function useTasksPanel(
       <Group gap={6} wrap="nowrap">
         {collapsed ? <IconChevronRight size={16} /> : expanded ? <IconChevronsDown size={16} /> : <IconChevronDown size={16} />}
         <Text size="sm" fw={700}>Tasks ({scopeContext(scope)}){collapsed && ` · ${open}`}</Text>
-        {unread && <UnreadMarkerDot label="unread task activity" />}
       </Group>
     </UnstyledButton>
   )

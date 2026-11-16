@@ -1672,9 +1672,8 @@ to break.
   page's selection): its tasks are marked in the list (`data-selected-resource`
   on the row, a violet "this PR" tag, a link chip that shows only the other
   links) and quick add creates new tasks in it; the list itself stays
-  scoped to `scope`. `unread` puts the unread dot by the count. Three levels:
-  - **normal** (the default): the summary "Tasks (<context>)", the unread
-    dot, the list toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
+  scoped to `scope`. Three levels:
+  - **normal** (the default): the summary "Tasks (<context>)", the list toolbar, and the list capped at `min(8 rows, 25dvh)` (`maxRows` on
     `TaskList`, `NORMAL_ROWS` = 8 in `TasksSection.tsx`), scrolling inside
     itself. When the capped list actually overflows (measured, so a list
     that fits offers nothing) a "Show all (N)" button sits under it, above
