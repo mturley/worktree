@@ -2,6 +2,7 @@ import { useState } from "react"
 import { ActionIcon, Tooltip } from "@mantine/core"
 import { IconAlertTriangleFilled, IconFileText } from "@tabler/icons-react"
 import { useWatchers } from "../../hooks/useWatchers"
+import { useWatcherHealth } from "../WatcherAlert"
 import type { CredService } from "../../api/types"
 import { serviceName } from "../settings/watcherText"
 import { WatcherLogsModal } from "./WatcherLogsModal"
@@ -19,8 +20,11 @@ function joinNames(names: string[]) {
 export function WatcherLogsButton({ fullScreen }: { fullScreen?: boolean }) {
   const [opened, setOpened] = useState(false)
   const { data } = useWatchers()
+  // A watcher turned off is never polled again, so its last error would
+  // otherwise stay "newer than its last success" for good.
+  const health = useWatcherHealth().data
   const failing = (data?.watchers ?? [])
-    .filter((w) => w.has_error)
+    .filter((w) => w.has_error && health?.[w.name as CredService]?.enabled !== false)
     .map((w) => serviceName[w.name as CredService] ?? w.name)
   const warn = failing.length > 0
   const label = warn

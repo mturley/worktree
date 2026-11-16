@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -42,6 +42,19 @@ describe("WatcherLogsButton", () => {
   it("turns into a warning when a watcher is failing", async () => {
     renderButton([{ name: "github", type: "pr", has_error: true, error_message: "401" }, { name: "jira", type: "jira" }])
     expect(await screen.findByRole("button", { name: "Watcher logs (watchers failing)" })).toBeInTheDocument()
+  })
+
+  it("ignores a failing watcher that is turned off in Settings", async () => {
+    const health = vi.spyOn(api, "watcherHealth").mockResolvedValue({
+      github: { enabled: true, failing: false },
+      jira: { enabled: true, failing: false },
+      slack: { enabled: false, failing: false },
+    })
+    renderButton([{ name: "github", type: "pr" }, { name: "slack", type: "slack", has_error: true, error_message: "invalid_auth" }])
+    await waitFor(() => expect(health).toHaveBeenCalled())
+    await act(async () => {})
+    expect(screen.getByRole("button", { name: "Watcher logs" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /failing/ })).toBeNull()
   })
 
   it("names one failing watcher in the tooltip", async () => {
