@@ -244,7 +244,8 @@ export function TaskRow({ task, selectedResource, ownWorktree, dragHandle, onSta
             size="xs"
             variant="outline"
             color="violet"
-            style={{ flex: "none", textTransform: "none" }}
+            // Mantine's Badge uppercases by default; the tag keeps that.
+            style={{ flex: "none" }}
           >
             {scopeContext({ kind: "resource", ...selectedResource })}
           </Badge>
