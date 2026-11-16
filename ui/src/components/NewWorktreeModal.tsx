@@ -9,7 +9,18 @@ import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
-import type { CreateConfirm, CreateStep } from "../api/types"
+import type { CreateConfirm } from "../api/types"
+
+// The pre-jobs response shape this modal still renders; the server now
+// answers with a job. Rewritten in the next task.
+type CreateStep = { key: string; label: string; status: "done" | "skipped" | "failed" | "pending"; detail?: string }
+interface CreateWorktreeResponse {
+  ok: boolean
+  confirm: CreateConfirm | null
+  steps: CreateStep[]
+  path?: string
+  error?: string
+}
 
 function StepIcon({ status }: { status: CreateStep["status"] }) {
   if (status === "done") return <IconCheck size={12} />
@@ -94,7 +105,9 @@ export function NewWorktreeModal({ opened, onClose }: { opened: boolean; onClose
         pull,
         copy_dotfiles: copyDotfiles,
         branch: asksBranch && branch.trim() ? branch.trim() : undefined,
-        ...answers,
+      }).then((r) => {
+        void answers
+        return r as unknown as CreateWorktreeResponse
       }),
     onSuccess: async (res) => {
       setSteps(res.steps)

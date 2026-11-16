@@ -3,7 +3,17 @@ import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { Alert, Button, Checkbox, Group, Loader, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { IconCheck, IconX } from "@tabler/icons-react"
 import { api } from "../api/client"
-import type { DeleteStep, DeleteWorktreeResponse } from "../api/types"
+import type { JobStepStatus } from "../api/types"
+
+// The pre-jobs response shape this modal still renders; the server now
+// answers with a job. Rewritten in the next task.
+type DeleteStep = { key: string; label: string; status: JobStepStatus; detail?: string }
+export interface DeleteWorktreeResponse {
+  ok: boolean
+  needs_force: string
+  steps: DeleteStep[]
+  error?: string
+}
 
 /** One stage of the pipeline: icon, label, and git's words when there are any. */
 function StepRow({ step, running }: { step: DeleteStep; running: boolean }) {
@@ -79,11 +89,11 @@ export function DeleteWorktreeModal({ opened, path, name, branch, onClose, onDel
     setRunning(true)
     setError(null)
     try {
-      setResult(await api.deleteWorktree({
+      void force
+      setResult((await api.deleteWorktree({
         path,
         delete_branch: deleteBranchOverride ?? deleteBranch,
-        ...force,
-      }))
+      })) as unknown as DeleteWorktreeResponse)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

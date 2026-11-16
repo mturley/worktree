@@ -1,12 +1,13 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
-import type { CmuxFocusMsg, ListenersSnapshot, NotificationMsg } from "../api/types"
+import type { CmuxFocusMsg, Job, JobState, ListenersSnapshot, NotificationMsg } from "../api/types"
 import { isMiniRoute } from "../lib/miniMode"
 import { TAB_ID } from "../lib/tabId"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setListeners } from "../lib/listenersStore"
 import { setChecks } from "../lib/checksStore"
+import { applyJob, isFinished, setJobs } from "../lib/jobsStore"
 import { openNotificationTarget, showBrowserNotification } from "../lib/browserNotify"
 import { pageHidden, streamsPauseWhenHidden } from "../lib/backgroundStreams"
 import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
@@ -34,6 +35,21 @@ function isListenersSnapshot(v: unknown): v is ListenersSnapshot {
   if (!isPlainObject(v)) return false
   const o = v as Record<string, unknown>
   return typeof o.enabled === "boolean" && isPlainObject(o.ports) && isPlainObject(o.ranges)
+}
+
+const JOB_STATES: readonly JobState[] = ["running", "needs_answer", "succeeded", "failed", "interrupted"]
+
+function isJob(v: unknown): v is Job {
+  if (!isPlainObject(v)) return false
+  const o = v as Record<string, unknown>
+  return (
+    typeof o.id === "string" &&
+    (o.kind === "worktree_create" || o.kind === "worktree_delete") &&
+    typeof o.state === "string" &&
+    (JOB_STATES as readonly string[]).includes(o.state) &&
+    Array.isArray(o.steps) &&
+    typeof o.created_at === "string"
+  )
 }
 
 export function useSSE() {
@@ -160,6 +176,36 @@ export function useSSE() {
           return
         }
         if (isListenersSnapshot(snap)) setListeners(snap)
+      })
+      // Everything the server holds, once per (re)connect: replaces what
+      // this tab has. A malformed snapshot is dropped whole.
+      es.addEventListener("jobs", (e) => {
+        let msg: unknown
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        if (!isPlainObject(msg)) return
+        const list = (msg as Record<string, unknown>).jobs
+        if (!Array.isArray(list) || !list.every(isJob)) return
+        setJobs(list)
+      })
+      es.addEventListener("job", (e) => {
+        let msg: unknown
+        try {
+          msg = JSON.parse((e as MessageEvent).data)
+        } catch {
+          return
+        }
+        if (!isJob(msg)) return
+        applyJob(msg)
+        if (isFinished(msg)) {
+          // A finished create or delete has changed the worktree list and,
+          // through its cmux workspace, what cmux shows.
+          qc.invalidateQueries({ queryKey: ["worktrees"] })
+          qc.invalidateQueries({ queryKey: ["cmux"] })
+        }
       })
       es.onerror = () => {
         es?.close()
