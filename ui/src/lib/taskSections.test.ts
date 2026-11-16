@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Task, TaskLink } from "../api/types"
 import {
-  applyMove, buildSections, canDrag, dueLabel, linkChip, openSummary, planDrop,
+  applyMove, buildSections, canDrag, dueLabel, linkChip, linksResource, openSummary, planDrop,
   type TaskListPrefs, type TaskSection,
 } from "./taskSections"
 
@@ -560,9 +560,10 @@ describe("linkChip", () => {
     expect(linkChip(withLinks([jira(true), pr(false, true)]))?.archived).toBe(false)
   })
 
-  it("is null on the list of the resource its first Focus link names", () => {
+  it("on its own resource's list: null alone, just the count of the others otherwise", () => {
     const own = { type: "pr", id: "opendatahub-io/odh-dashboard#4521" }
-    expect(linkChip(withLinks([pr(true), jira(false)]), own)).toBeNull()
+    expect(linkChip(withLinks([pr(true)]), own)).toBeNull()
+    expect(linkChip(withLinks([pr(true), jira(false)]), own)).toEqual({ text: "+1", archived: false })
     expect(linkChip(withLinks([jira(true), pr(true)]), own)).toEqual({ text: "RHOAIENG-1 +1", archived: false })
     expect(linkChip(withLinks([pr(false), jira(false)]), own)).toEqual({ text: "🔗 2 linked", archived: false })
   })
@@ -636,5 +637,19 @@ describe("applyMove", () => {
     const next = applyMove(ts, 1, { after: 9 }, { priority: "high" })
     expect(order(next)).toEqual([1, 2])
     expect(next.find((t) => t.id === 1)?.priority).toBe("high")
+  })
+})
+
+describe("linksResource", () => {
+  const r = { type: "pr", id: "o/r#1" }
+  const link = (over: Partial<TaskLink>): TaskLink => ({ kind: "resource", resource_type: "pr", resource_id: "o/r#1", focus: false, archived: false, ...over })
+  it("matches any link to the resource, focus or not, archived or not", () => {
+    expect(linksResource(mk(1, "a", { links: [link({})] }), r)).toBe(true)
+    expect(linksResource(mk(1, "a", { links: [link({ focus: true, archived: true })] }), r)).toBe(true)
+  })
+  it("does not match another resource, another type, or a worktree link", () => {
+    expect(linksResource(mk(1, "a", { links: [link({ resource_id: "o/r#2" })] }), r)).toBe(false)
+    expect(linksResource(mk(1, "a", { links: [link({ resource_type: "jira" })] }), r)).toBe(false)
+    expect(linksResource(mk(1, "a", { links: [{ kind: "worktree", worktree: "/w", focus: true, archived: false }] }), r)).toBe(false)
   })
 })
