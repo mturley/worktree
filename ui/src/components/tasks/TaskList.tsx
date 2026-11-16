@@ -181,7 +181,7 @@ function SortableTaskRow({ task, section, sortDraggable, dropEdge, ownResource, 
       {dropEdge && <div className="task-drop-line" data-task-drop-line={dropEdge} aria-hidden />}
       <TaskRow
         task={task}
-        ownResource={ownResource}
+        selectedResource={ownResource}
         ownWorktree={ownWorktree}
         dragHandle={grip}
         onState={pickState}
@@ -469,7 +469,7 @@ export function TaskList({ scope, ownResource, maxRows, expand }: {
                   {dragHint}
                 </span>
               )}
-              <TaskRow task={activeTask} ownResource={ownResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
+              <TaskRow task={activeTask} selectedResource={ownResource} ownWorktree={ownWorktree} onState={() => {}} onPriority={() => {}} onToggleStar={() => {}} />
             </Box>
           ) : null}
         </DragOverlay>

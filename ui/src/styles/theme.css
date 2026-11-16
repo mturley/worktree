@@ -110,6 +110,21 @@ body,
   border-radius: var(--mantine-radius-md);
 }
 
+/* A task linking the page's selected resource: a violet bar in the panel's
+   left padding, outside the row (the row's own border is the unread edge).
+   Violet because blue already means unread. */
+[data-task-row][data-selected-resource]::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--mantine-color-violet-filled);
+  pointer-events: none;
+}
+
 /* The task being dragged, following the pointer (TaskList's DragOverlay).
    Opaque — the accent tint mixed into the card surface rather than over
    transparency — and lifted with a shadow, so the rows it passes over never

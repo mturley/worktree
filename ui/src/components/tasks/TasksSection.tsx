@@ -7,6 +7,7 @@ import { useTasks, type TaskScope } from "../../hooks/useTasks"
 import { useIsWide } from "../../hooks/useIsWide"
 import { useTaskListPrefs } from "../../hooks/useTaskListPrefs"
 import { openSummary } from "../../lib/taskSections"
+import { scopeContext } from "../../lib/taskScope"
 import { TaskList } from "./TaskList"
 import { TaskListToolbar } from "./TaskListToolbar"
 import { UnreadMarkerDot } from "../UnreadMarkerDot"
@@ -15,21 +16,6 @@ import { UnreadMarkerDot } from "../UnreadMarkerDot"
 const NORMAL_ROWS = 8
 
 export type TasksPanelLevel = "collapsed" | "normal" | "expanded"
-
-/** What a resource type is called in the panel's summary. */
-const RESOURCE_NOUN: Record<string, string> = { pr: "PR", jira: "issue", slack: "thread", link: "link" }
-
-/** Which tasks the panel lists, for its summary: "all", "this worktree", "this PR"… */
-export function scopeContext(scope: TaskScope): string {
-  switch (scope.kind) {
-    case "all":
-      return "all"
-    case "worktree":
-      return "this worktree"
-    case "resource":
-      return `this ${RESOURCE_NOUN[scope.type] ?? "resource"}`
-  }
-}
 
 /**
  * The task panel every page shows above its tab bar: the list for `scope`,

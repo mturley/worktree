@@ -11,7 +11,8 @@ import type { TaskScope } from "../../hooks/useTasks"
 import { TASK_LIST_KEY } from "../../lib/taskListPrefs"
 import { TaskModalProvider } from "./modal/TaskModalProvider"
 import { setViewport } from "../../testing/viewport"
-import { scopeContext, useTasksPanel } from "./TasksSection"
+import { useTasksPanel } from "./TasksSection"
+import { scopeContext } from "../../lib/taskScope"
 
 vi.mock("../../api/client", async (orig) => ({
   ...(await orig<typeof import("../../api/client")>()),

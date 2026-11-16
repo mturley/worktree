@@ -67,7 +67,7 @@ describe("TaskRow", () => {
   it("omits the link chip on its own resource's list", () => {
     wrap(<TaskRow
       task={task({ links: [{ kind: "resource", resource_type: "github_pr", resource_id: "o/r#5", focus: true, archived: false }] })}
-      ownResource={{ type: "github_pr", id: "o/r#5" }}
+      selectedResource={{ type: "github_pr", id: "o/r#5" }}
       onState={() => {}} onPriority={() => {}} onToggleStar={() => {}}
     />)
     expect(screen.queryByTestId("task-link-chip")).toBeNull()
@@ -375,5 +375,43 @@ describe("TaskRow modifier clicks", () => {
     expect(await screen.findByText("Open task")).toBeInTheDocument()
     expect(screen.getByText("Cmd+click to open in full UI")).toBeInTheDocument()
     expect(screen.getByText("Shift+click to switch cmux")).toBeInTheDocument()
+  })
+})
+
+describe("TaskRow selected resource", () => {
+  const sel = { type: "pr", id: "o/r#1" }
+  const prLink = (focus: boolean) => ({ kind: "resource" as const, resource_type: "pr", resource_id: "o/r#1", focus, archived: false })
+  const jiraLink = { kind: "resource" as const, resource_type: "jira", resource_id: "J-1", focus: true, archived: false }
+  const noop = { onState: () => {}, onPriority: () => {}, onToggleStar: () => {} }
+  const row = () => document.querySelector<HTMLElement>("[data-task-row]")!
+  // jsdom may drop var()/color-mix() from style.background, so read the attribute.
+  const styleAttr = () => row().getAttribute("style") ?? ""
+
+  it("marks a task linking the resource with the violet tint and a 'this PR' tag in place of its chip", () => {
+    wrap(<TaskRow task={task({ links: [prLink(true)] })} selectedResource={sel} {...noop} />)
+    expect(row()).toHaveAttribute("data-selected-resource", "true")
+    expect(styleAttr()).toContain("violet-light")
+    expect(screen.getByTestId("task-this-resource-tag")).toHaveTextContent(/this PR/i)
+    expect(screen.queryByTestId("task-link-chip")).toBeNull()
+  })
+
+  it("a non-focus link still marks it, and the focus resource's chip stays", () => {
+    wrap(<TaskRow task={task({ links: [jiraLink, prLink(false)] })} selectedResource={sel} {...noop} />)
+    expect(row()).toHaveAttribute("data-selected-resource", "true")
+    expect(screen.getByTestId("task-link-chip")).toHaveTextContent("J-1 +1")
+  })
+
+  it("an unread marked row keeps the blue unread background, with the tag", () => {
+    wrap(<TaskRow task={task({ links: [prLink(true)], unread_count: 2 })} selectedResource={sel} {...noop} />)
+    expect(styleAttr()).toContain("blue")
+    expect(styleAttr()).not.toContain("violet")
+    expect(row()).toHaveAttribute("data-selected-resource", "true")
+    expect(screen.getByTestId("task-this-resource-tag")).toBeInTheDocument()
+  })
+
+  it("leaves other tasks, and every task with no selection, unmarked", () => {
+    wrap(<><TaskRow task={task({ links: [jiraLink] })} selectedResource={sel} {...noop} /><TaskRow task={task({ links: [prLink(true)] })} {...noop} /></>)
+    expect(document.querySelectorAll("[data-selected-resource]")).toHaveLength(0)
+    expect(screen.queryByTestId("task-this-resource-tag")).toBeNull()
   })
 })
