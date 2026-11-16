@@ -10,7 +10,7 @@ import (
 // PRAGMA user_version when migrate finishes. OpenRead compares against it, and
 // refuses a DB behind it rather than migrating. Bump it whenever migrate
 // changes the schema; TestSchemaVersionCoversSchema fails until you do.
-const schemaVersion = 4
+const schemaVersion = 5
 
 // migrate creates the worktree-owned tables. It is idempotent and disjoint
 // from the watcher library's Migrate (which owns all watcher_* tables). None
@@ -241,6 +241,23 @@ func migrate(conn *sql.DB) error {
 			updated_at     TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS review_comments_worktree ON review_comments(worktree)`,
+		// Background jobs (worktree create/delete) run by the web UI server.
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id          TEXT PRIMARY KEY,
+			kind        TEXT NOT NULL,
+			title       TEXT NOT NULL,
+			target      TEXT NOT NULL,
+			request     TEXT NOT NULL,
+			state       TEXT NOT NULL,
+			steps       TEXT NOT NULL,
+			question    TEXT,
+			result      TEXT,
+			error       TEXT NOT NULL DEFAULT '',
+			pid         INTEGER NOT NULL,
+			created_at  TEXT NOT NULL,
+			updated_at  TEXT NOT NULL,
+			finished_at TEXT
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := conn.Exec(s); err != nil {
