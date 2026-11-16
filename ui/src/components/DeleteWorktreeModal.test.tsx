@@ -216,6 +216,58 @@ describe("DeleteWorktreeModal", () => {
     expect(screen.getByRole("button", { name: /^ok$/i })).toBeInTheDocument()
   })
 
+  // Over plain HTTP a hidden tab gives up its stream, so a job can finish and
+  // expire with this tab hearing none of it. What is left must not be a
+  // spinner that never resolves.
+  it("says so when the job ended while the tab was away", async () => {
+    const user = userEvent.setup()
+    wrap(modal())
+    await startJob(user)
+    act(() => applyJob(job()))
+    expect(await screen.findByLabelText("In progress")).toBeInTheDocument()
+
+    act(() => setJobs([]))
+    expect(await screen.findByText("This finished while this tab was away.")).toBeInTheDocument()
+    expect(screen.queryByLabelText("In progress")).not.toBeInTheDocument()
+    expect(screen.queryByText(/keeps running if you close this window/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
+  })
+
+  it("says so when it is opened on a job it has never seen", () => {
+    wrap(modal({ jobId: "nosuchjob", path: undefined, name: undefined, branch: undefined }))
+    expect(screen.getByText("This job is no longer running.")).toBeInTheDocument()
+    expect(screen.queryByLabelText(/type the worktree name/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^delete$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
+  })
+
+  // A destructive dialog must never open on a previous run's results.
+  it("reopening after a finished job shows a fresh confirmation form", async () => {
+    const user = userEvent.setup()
+    const { rerender } = wrap(modal())
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await screen.findByRole("button", { name: /^ok$/i })
+
+    rerender(<MantineProvider>{modal({ opened: false })}</MantineProvider>)
+    rerender(<MantineProvider>{modal()}</MantineProvider>)
+    expect(await screen.findByLabelText(/type the worktree name/i)).toHaveValue("")
+    expect(screen.queryByText("Remove worktree directory")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^delete$/i })).toBeDisabled()
+  })
+
+  it("retargeting at another worktree shows a fresh confirmation form", async () => {
+    const user = userEvent.setup()
+    const { rerender } = wrap(modal())
+    await startJob(user)
+    act(() => applyJob(succeeded()))
+    await screen.findByRole("button", { name: /^ok$/i })
+
+    rerender(<MantineProvider>{modal({ path: "/wt/bar", name: "bar" })}</MantineProvider>)
+    expect(await screen.findByLabelText(/type the worktree name/i)).toHaveValue("")
+    expect(screen.queryByText("Remove worktree directory")).not.toBeInTheDocument()
+  })
+
   it("a failed job offers Run again", async () => {
     const user = userEvent.setup()
     jobRetry.mockResolvedValue(job())

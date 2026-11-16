@@ -5,9 +5,17 @@ import type { Job, JobStep } from "../api/types"
 // the stream's `jobs` and `job` events (hooks/useSSE.ts). Same
 // useSyncExternalStore pattern as checksStore.ts.
 
+/** What JobModalHost needs to render a modal, settled when it is opened. */
+export interface OpenJobModal {
+  id: string
+  kind: string
+  /** The worktree path the job works on. */
+  target: string
+}
+
 let jobs: Job[] = []
 let attached: ReadonlySet<string> = new Set()
-let openId: string | undefined
+let openModal: OpenJobModal | undefined
 const subscribers = new Set<() => void>()
 
 function emit(): void {
@@ -78,19 +86,25 @@ export function useAttachedJobIds(): ReadonlySet<string> {
   return useSyncExternalStore(subscribe, () => attached)
 }
 
-/** A toast asks for a job's modal; JobModalHost answers. */
-export function openJobModal(id: string): void {
-  openId = id
+/**
+ * A toast, or the control that started the job, asks for its modal;
+ * JobModalHost answers. Which modal to show is decided here, once, from the
+ * job as it is now: the server drops a clean success ten seconds later, and
+ * another tab can dismiss it sooner, neither of which should take the modal
+ * away from somebody reading it.
+ */
+export function openJobModal(job: Job): void {
+  openModal = { id: job.id, kind: job.kind, target: job.target }
   emit()
 }
 
 export function closeJobModal(): void {
-  openId = undefined
+  openModal = undefined
   emit()
 }
 
-export function useOpenJobId(): string | undefined {
-  return useSyncExternalStore(subscribe, () => openId)
+export function useOpenJobModal(): OpenJobModal | undefined {
+  return useSyncExternalStore(subscribe, () => openModal)
 }
 
 export function isFinished(job: Job): boolean {

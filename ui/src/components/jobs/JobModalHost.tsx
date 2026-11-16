@@ -1,17 +1,51 @@
-import { closeJobModal, getJob, useJobs, useOpenJobId } from "../../lib/jobsStore"
+import { useQueryClient } from "@tanstack/react-query"
+import { useLocation } from "wouter"
+import { closeJobModal, useOpenJobModal } from "../../lib/jobsStore"
 import { DeleteWorktreeModal } from "../DeleteWorktreeModal"
 import { NewWorktreeModal } from "../NewWorktreeModal"
 
-/** Opens the modal for the job a toast asked about. */
-export function JobModalHost() {
-  const id = useOpenJobId()
-  // Re-render when the job arrives, changes or leaves the store.
-  useJobs()
-  if (id === undefined) return null
-  const job = getJob(id)
-  if (!job) return null
-  if (job.kind === "worktree_delete") {
-    return <DeleteWorktreeModal opened jobId={id} onClose={closeJobModal} onDeleted={closeJobModal} />
+/** The worktree a /worktree/… route is showing, if it is showing one. */
+function routedWorktree(location: string): string | undefined {
+  const prefix = "/worktree/"
+  if (!location.startsWith(prefix)) return undefined
+  try {
+    return decodeURIComponent(location.slice(prefix.length))
+  } catch {
+    return undefined // a malformed escape in the URL names no worktree
   }
-  return <NewWorktreeModal opened jobId={id} onClose={closeJobModal} />
+}
+
+/**
+ * Every job modal is mounted here, at the root, rather than beside the control
+ * that started the job: a delete removes the worktree its own page is built
+ * from, so a modal living on that page would be torn down at the very moment
+ * it has something to report.
+ *
+ * Which modal to show was settled by openJobModal, so the job leaving the
+ * store — the server's ten-second expiry, another tab dismissing it — does not
+ * close it either. Only closeJobModal does.
+ */
+export function JobModalHost() {
+  const open = useOpenJobModal()
+  const [location, navigate] = useLocation()
+  const qc = useQueryClient()
+  if (open === undefined) return null
+
+  if (open.kind === "worktree_delete") {
+    const onDeleted = () => {
+      closeJobModal()
+      // The worktree is gone: its tasks lose their link to it, and its own
+      // page has nothing left to show.
+      void qc.invalidateQueries({ queryKey: ["tasks"] })
+      if (routedWorktree(location) === open.target) navigate("/")
+    }
+    return (
+      <DeleteWorktreeModal opened jobId={open.id} onClose={closeJobModal} onDeleted={onDeleted} />
+    )
+  }
+  if (open.kind === "worktree_create") {
+    return <NewWorktreeModal opened jobId={open.id} onClose={closeJobModal} />
+  }
+  // A kind this build has no modal for: its toast still shows it.
+  return null
 }

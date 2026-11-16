@@ -1,9 +1,9 @@
 import { useState } from "react"
 import { useLocation } from "wouter"
-import { Affix, ActionIcon, Button, Group, Loader, Paper, Stack, Text } from "@mantine/core"
+import { Affix, ActionIcon, Box, Button, Group, Loader, Paper, Stack, Text } from "@mantine/core"
 import { IconChevronDown, IconChevronUp, IconX } from "@tabler/icons-react"
 import { api } from "../../api/client"
-import type { Job } from "../../api/types"
+import type { Job, JobState, JobStep } from "../../api/types"
 import {
   currentStep, isFinished, openJobModal, useAttachedJobIds, useJobs,
 } from "../../lib/jobsStore"
@@ -35,6 +35,22 @@ function writeCollapsed(id: string, collapsed: boolean): void {
   }
 }
 
+// What the server leaves on the step a stopped run was on. The state line
+// below the steps says the same thing, so the step does not repeat it.
+const INTERRUPTED_DETAIL = "interrupted: the server stopped"
+
+/** How a collapsed toast says where a finished job ended up. */
+const FINISHED_WORD: Partial<Record<JobState, string>> = {
+  succeeded: "Done",
+  failed: "Failed",
+  interrupted: "Interrupted",
+}
+
+function toastSteps(job: Job): JobStep[] {
+  if (job.state !== "interrupted") return job.steps
+  return job.steps.map((s) => (s.detail === INTERRUPTED_DETAIL ? { ...s, detail: undefined } : s))
+}
+
 /** The line under the steps for states that need one; undefined for none. */
 function stateLine(job: Job): { text: string; color: string } | undefined {
   switch (job.state) {
@@ -56,6 +72,22 @@ function stateLine(job: Job): { text: string; color: string } | undefined {
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+/**
+ * The one line a collapsed toast gets: the step in flight, or whatever the
+ * state line says, led by how a finished job ended. Without that word a
+ * collapsed failure whose detail sits on its step said nothing at all beyond
+ * the title.
+ */
+function collapsedSummary(job: Job, lineText: string | undefined): string | undefined {
+  const detail = currentStep(job)?.label ?? lineText
+  const word = FINISHED_WORD[job.state]
+  if (word === undefined) return detail
+  if (detail === undefined) return word
+  // The interrupted line already begins with its word; do not say it twice.
+  if (detail.toLowerCase().startsWith(word.toLowerCase())) return detail
+  return `${word} — ${detail}`
 }
 
 function JobToast({ job }: { job: Job }) {
@@ -87,13 +119,13 @@ function JobToast({ job }: { job: Job }) {
     <Group>
       <Button
         size="compact-xs"
-        onClick={(e) => { e.stopPropagation(); openJobModal(job.id) }}
+        onClick={(e) => { e.stopPropagation(); openJobModal(job) }}
       >
         Answer
       </Button>
     </Group>
   )
-  const summary =currentStep(job)?.label ?? line?.text
+  const summary = collapsedSummary(job, line?.text)
 
   return (
     <Paper
@@ -103,8 +135,9 @@ function JobToast({ job }: { job: Job }) {
       w={340}
       role="status"
       aria-label={job.title}
-      onClick={clickable ? () => openJobModal(job.id) : undefined}
-      style={clickable ? { cursor: "pointer" } : undefined}
+      onClick={clickable ? () => openJobModal(job) : undefined}
+      // Narrower than 340 on a phone, rather than off the side of the screen.
+      style={{ maxWidth: "calc(100vw - 32px)", cursor: clickable ? "pointer" : undefined }}
     >
       <Stack gap={6}>
         <Group gap={8} wrap="nowrap" justify="space-between">
@@ -135,12 +168,17 @@ function JobToast({ job }: { job: Job }) {
         </Group>
         {collapsed ? (
           <>
-            {summary !== undefined && <Text size="xs" c="dimmed">{summary}</Text>}
+            {summary !== undefined && (
+              <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>{summary}</Text>
+            )}
             {answerButton}
           </>
         ) : (
-          <>
-            <JobStepper steps={job.steps} />
+          // A job with many steps, or one long error, scrolls inside its own
+          // toast rather than growing past the top of the screen.
+          <Box mah="50vh" style={{ overflowY: "auto" }}>
+            <Stack gap={6}>
+            <JobStepper steps={toastSteps(job)} />
             {line && <Text size="xs" c={line.color}>{line.text}</Text>}
             {answerButton}
             {resultPath !== undefined && (
@@ -170,7 +208,8 @@ function JobToast({ job }: { job: Job }) {
                 </Button>
               </Group>
             )}
-          </>
+            </Stack>
+          </Box>
         )}
         {error !== undefined && <Text size="xs" c="red">{error}</Text>}
       </Stack>
@@ -186,7 +225,8 @@ export function JobToasts() {
   if (shown.length === 0) return null
   return (
     <Affix position={{ bottom: 16, right: 16 }} zIndex={150}>
-      <Stack gap="xs">
+      {/* Many at once scroll together rather than running off the screen. */}
+      <Stack gap="xs" mah="calc(100vh - 32px)" style={{ overflowY: "auto" }}>
         {shown.map((j) => <JobToast key={j.id} job={j} />)}
       </Stack>
     </Affix>

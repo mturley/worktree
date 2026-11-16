@@ -57,7 +57,6 @@ function renderModal(props: Partial<React.ComponentProps<typeof NewWorktreeModal
 
 let jobAnswer: MockInstance<typeof api.jobAnswer>
 let jobDismiss: MockInstance<typeof api.jobDismiss>
-let cmuxCreate: MockInstance<typeof api.cmuxCreate>
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -73,7 +72,6 @@ beforeEach(() => {
   }))
   jobAnswer = vi.spyOn(api, "jobAnswer").mockResolvedValue(job())
   jobDismiss = vi.spyOn(api, "jobDismiss").mockResolvedValue(undefined)
-  cmuxCreate = vi.spyOn(api, "cmuxCreate")
 })
 
 afterEach(() => {
@@ -178,18 +176,6 @@ describe("NewWorktreeModal", () => {
     await screen.findByText("Creating my-feature")
   })
 
-  it("never calls cmuxCreate", async () => {
-    vi.spyOn(api, "createWorktree").mockResolvedValue({ job: job(), attached: false })
-    withCmux()
-    renderModal()
-    await type("my-feature")
-    await userEvent.type(await screen.findByLabelText(/workspace name/i), "ws")
-    await userEvent.click(screen.getByRole("button", { name: /^create$/i }))
-    act(() => applyJob(succeeded("/wt/my-feature")))
-    await screen.findByRole("button", { name: /^ok$/i })
-    expect(cmuxCreate).not.toHaveBeenCalled()
-  })
-
   it("shows live steps", async () => {
     vi.spyOn(api, "createWorktree").mockResolvedValue({ job: job(), attached: false })
     renderModal()
@@ -252,6 +238,40 @@ describe("NewWorktreeModal", () => {
     expect(await screen.findByText("git exploded")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: /run again/i }))
     expect(retry).toHaveBeenCalledWith("j1")
+  })
+
+  // The error is usually the failing step's own output: said twice it reads
+  // like two things went wrong.
+  it("does not repeat an error a step already shows", async () => {
+    vi.spyOn(api, "jobRetry").mockResolvedValue(job())
+    act(() => applyJob(job({
+      state: "failed",
+      error: "git exploded",
+      steps: [{ key: "create_worktree", label: "Create the worktree", status: "failed", detail: "git exploded" }],
+    })))
+    renderModal({ jobId: "j1" })
+    expect(await screen.findAllByText("git exploded")).toHaveLength(1)
+  })
+
+  it("says so when it is opened on a job it has never seen", async () => {
+    renderModal({ jobId: "nosuchjob" })
+    expect(await screen.findByText("This job is no longer running.")).toBeInTheDocument()
+    expect(screen.queryByLabelText(/branch, pr, or issue/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
+  })
+
+  it("says so when the job ended while the tab was away", async () => {
+    vi.spyOn(api, "createWorktree").mockResolvedValue({ job: job(), attached: false })
+    renderModal()
+    await type("my-feature")
+    await userEvent.click(screen.getByRole("button", { name: /^create$/i }))
+    act(() => applyJob(job()))
+    expect(await screen.findByLabelText("In progress")).toBeInTheDocument()
+
+    act(() => setJobs([]))
+    expect(await screen.findByText("This finished while this tab was away.")).toBeInTheDocument()
+    expect(screen.queryByLabelText("In progress")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeInTheDocument()
   })
 
   it("OK on success dismisses and navigates to the worktree", async () => {

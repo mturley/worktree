@@ -9,6 +9,8 @@ import { useLocation } from "wouter"
 import { api } from "../api/client"
 import { useCmux } from "../api/cmux"
 import { isFinished } from "../lib/jobsStore"
+import { jobErrorToShow } from "./jobs/jobError"
+import { JOB_GONE_TEXT, JOB_UNKNOWN_TEXT } from "./jobs/jobMessages"
 import { JobStepper } from "./jobs/JobStepper"
 import { useModalJob } from "./jobs/useModalJob"
 
@@ -41,7 +43,7 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
   const [wsGroup, setWsGroup] = useState<string | null>(null)
   const [wsColor, setWsColor] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
-  const { jobId, job, busy, error, setError, track, act, dismissFinished } =
+  const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
     useModalJob(opened, initialJobId)
   // Once a job exists the form is moot: the work carries on server-side.
   useUnsavedChanges(
@@ -140,14 +142,18 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
     if (reuse) onClose()
   }
 
-  const question = job?.state === "needs_answer" ? job.question : null
-  const failed = job?.state === "failed" || job?.state === "interrupted"
+  // A job that ended out of sight is over, whatever its last state said.
+  const question = job?.state === "needs_answer" && !gone ? job.question : null
+  const failed = !gone && (job?.state === "failed" || job?.state === "interrupted")
+  const showError = job !== undefined && !gone ? jobErrorToShow(job) : undefined
+  const running = job?.state === "running" && !gone
   const locked = starting
-  const showForm = !job
+  const showForm = !job && !unknown
 
   return (
     <Modal opened={opened} onClose={close} title={job ? job.title : "New worktree"} centered>
       <Stack gap="sm">
+        {unknown && <Text size="sm">{JOB_UNKNOWN_TEXT}</Text>}
         {showForm && (<>
         <TextInput
           label="Branch, PR, or issue"
@@ -234,7 +240,7 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
         )}
         </>)}
 
-        {job && <JobStepper steps={job.steps} />}
+        {job && <JobStepper steps={job.steps} quiet={gone} />}
 
         {question && (
           <Alert color="yellow" title={question.key === "reuse_branch" ? "Branch already exists" : "Local differs from the PR"}>
@@ -247,9 +253,11 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
         )}
 
         {error && <Alert color="red">{error}</Alert>}
-        {failed && job.error !== undefined && <Alert color="red">{job.error}</Alert>}
+        {showError && <Alert color="red">{showError}</Alert>}
 
-        {job?.state === "running" && (
+        {gone && <Text size="xs" c="dimmed">{JOB_GONE_TEXT}</Text>}
+
+        {running && (
           <Text size="xs" c="dimmed">This keeps running if you close this window.</Text>
         )}
 
@@ -284,8 +292,9 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
               <Button onClick={close}>Close</Button>
             </>
           )}
-          {job?.state === "succeeded" && <Button onClick={() => void ok()}>OK</Button>}
-          {job?.state === "running" && <Button variant="default" onClick={close}>Close</Button>}
+          {job?.state === "succeeded" && !gone && <Button onClick={() => void ok()}>OK</Button>}
+          {running && <Button variant="default" onClick={close}>Close</Button>}
+          {(gone || unknown) && <Button onClick={close}>Close</Button>}
         </Group>
       </Stack>
     </Modal>

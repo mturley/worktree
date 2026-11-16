@@ -5,7 +5,7 @@ import { MantineProvider } from "@mantine/core"
 import { Router } from "wouter"
 import { memoryLocation } from "wouter/memory-location"
 import { JobToasts } from "./JobToasts"
-import { applyJob, attachJob, closeJobModal, setJobs, useOpenJobId } from "../../lib/jobsStore"
+import { applyJob, attachJob, closeJobModal, setJobs, useOpenJobModal } from "../../lib/jobsStore"
 import type { Job, JobStep } from "../../api/types"
 
 const jobRetry = vi.fn()
@@ -41,7 +41,7 @@ const job = (over: Partial<Job> = {}): Job => ({
 })
 
 function OpenId() {
-  return <span data-testid="open">{useOpenJobId() ?? "none"}</span>
+  return <span data-testid="open">{useOpenJobModal()?.id ?? "none"}</span>
 }
 
 function wrap(path = "/") {
@@ -205,6 +205,42 @@ describe("JobToasts", () => {
     await user.click(screen.getByRole("button", { name: "Open worktree" }))
     expect(loc.history?.at(-1)).toBe(`/worktree/${encodeURIComponent("/wt/foo bar")}`)
     await waitFor(() => expect(jobDismiss).toHaveBeenCalledWith("j1"))
+  })
+
+  // Collapsed, a finished job used to be a title and nothing else whenever
+  // its detail sat on a step.
+  it("a collapsed finished job says how it ended", async () => {
+    const user = userEvent.setup()
+    act(() => setJobs([job({
+      state: "failed",
+      error: "fatal: could not remove",
+      steps: [{ key: "a", label: "Fetch branch", status: "failed", detail: "fatal: could not remove" }],
+    })]))
+    wrap()
+    await user.click(screen.getByLabelText("Collapse"))
+    expect(screen.getByText("Failed")).toBeInTheDocument()
+  })
+
+  it("a collapsed success says Done", async () => {
+    const user = userEvent.setup()
+    act(() => setJobs([job({
+      state: "succeeded",
+      steps: steps.map((s) => ({ ...s, status: "done" as const })),
+    })]))
+    wrap()
+    await user.click(screen.getByLabelText("Collapse"))
+    expect(screen.getByText("Done")).toBeInTheDocument()
+  })
+
+  // The step's detail and the state line below it said the same thing.
+  it("an interrupted job says the server stopped once", () => {
+    act(() => setJobs([job({
+      state: "interrupted",
+      steps: [{ key: "a", label: "Fetch branch", status: "failed", detail: "interrupted: the server stopped" }],
+    })]))
+    wrap()
+    expect(screen.getAllByText(/the server stopped/i)).toHaveLength(1)
+    expect(screen.getByText("Interrupted: the server stopped")).toBeInTheDocument()
   })
 
   it("a succeeded job with a failed step shows that step's detail", () => {

@@ -6,6 +6,7 @@ import { TASK_ACTIVITY_STALE_MS } from "./useTaskDetail"
 import { api } from "../api/client"
 import { setListeners, useListeners } from "../lib/listenersStore"
 import { setChecks, useChecks } from "../lib/checksStore"
+import { setJobs, useJobs } from "../lib/jobsStore"
 
 const streams = vi.hoisted(() => ({ pause: true }))
 vi.mock("../lib/backgroundStreams", async (orig) => ({
@@ -278,5 +279,75 @@ describe("useSSE", () => {
     expect(first.closed).toBe(false)
     setVisibility("visible")
     expect(FakeEventSource.last).toBe(first)
+  })
+})
+
+describe("useSSE jobs", () => {
+  const job = (over: Record<string, unknown> = {}) => ({
+    id: "j1",
+    kind: "worktree_delete",
+    title: "Delete worktree foo",
+    target: "/wt/foo",
+    state: "running",
+    steps: [{ key: "a", label: "A", status: "running" }],
+    question: null,
+    result: null,
+    created_at: "2026-11-16T10:00:00Z",
+    updated_at: "2026-11-16T10:00:00Z",
+    ...over,
+  })
+
+  afterEach(() => {
+    act(() => setJobs([]))
+  })
+
+  // One job this build cannot read must not hide every other job in the
+  // snapshot, and a kind it has no name for is not unreadable: the toast
+  // renders it and the modal host simply opens nothing for it.
+  it("keeps the jobs it can read out of a snapshot", () => {
+    renderSSE()
+    const { result } = renderHook(() => useJobs())
+    const es = FakeEventSource.last!
+    act(() => es.emit("jobs", JSON.stringify({
+      jobs: [
+        job(),
+        job({ id: "j2", created_at: "2026-11-16T10:00:01Z", kind: "some_future_kind" }),
+        job({ id: "bad-state", state: "elsewhere" }),
+        job({ id: "bad-title", title: 7 }),
+        job({ id: "bad-target", target: null }),
+        job({ id: "bad-step", steps: [{ key: "a", label: "A" }] }),
+        "not a job",
+      ],
+    })))
+    expect(result.current.map((j) => j.id)).toEqual(["j1", "j2"])
+  })
+
+  it("drops a snapshot that is not a list of jobs", () => {
+    renderSSE()
+    const { result } = renderHook(() => useJobs())
+    const es = FakeEventSource.last!
+    act(() => es.emit("jobs", JSON.stringify({ jobs: [job()] })))
+    act(() => es.emit("jobs", "not json"))
+    act(() => es.emit("jobs", JSON.stringify({ jobs: "nope" })))
+    expect(result.current.map((j) => j.id)).toEqual(["j1"])
+  })
+
+  // A delete takes the worktree's resources, timeline entries and its tasks'
+  // link to it as well as the worktree itself, and the tab that hears about
+  // it may not be the one that asked for it.
+  it("refreshes every list a finished job changed", () => {
+    const invalidate = renderSSE()
+    const es = FakeEventSource.last!
+    act(() => es.emit("job", JSON.stringify(job({ state: "succeeded" }))))
+    for (const key of ["worktrees", "cmux", "tasks", "resources", "timeline"]) {
+      expect(invalidatedKeys(invalidate)).toContain(JSON.stringify([key]))
+    }
+  })
+
+  it("refreshes nothing for a job still running", () => {
+    const invalidate = renderSSE()
+    const es = FakeEventSource.last!
+    act(() => es.emit("job", JSON.stringify(job())))
+    expect(invalidatedKeys(invalidate)).toEqual([])
   })
 })

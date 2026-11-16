@@ -254,7 +254,9 @@ export interface JobStep { key: string; label: string; status: JobStepStatus; de
 export interface JobQuestion { key: string; branch?: string; local_head?: string; remote_head?: string }
 export interface Job {
   id: string
-  kind: "worktree_create" | "worktree_delete"
+  /** "worktree_create" | "worktree_delete"; any other is a kind this build
+   *  has no modal for, which the toast still shows. */
+  kind: string
   title: string
   target: string
   state: JobState
@@ -274,13 +276,6 @@ export interface CmuxColor { name: string; hex: string }
 export interface CmuxGroupsResponse { groups: CmuxGroup[]; colors: CmuxColor[] }
 
 export interface Repo { name: string; repo_root: string }
-
-export interface CreateConfirm {
-  key: "reuse_branch" | "reset_to_pr"
-  branch: string
-  local_head?: string
-  remote_head?: string
-}
 
 /** The branch a PR or Jira input would get; empty for a plain branch name. */
 export interface DefaultBranchResponse {

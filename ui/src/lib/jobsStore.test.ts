@@ -11,7 +11,7 @@ import {
   setJobs,
   useAttachedJobIds,
   useJobs,
-  useOpenJobId,
+  useOpenJobModal,
 } from "./jobsStore"
 
 const job = (over: Partial<Job> = {}): Job => ({
@@ -81,13 +81,26 @@ describe("jobsStore", () => {
     expect(result.current.has("a")).toBe(false)
   })
 
-  it("openJobModal / closeJobModal drive useOpenJobId", () => {
-    const { result } = renderHook(() => useOpenJobId())
+  it("openJobModal / closeJobModal drive useOpenJobModal", () => {
+    const { result } = renderHook(() => useOpenJobModal())
     expect(result.current).toBeUndefined()
-    act(() => openJobModal("a"))
-    expect(result.current).toBe("a")
+    act(() => openJobModal(job()))
+    expect(result.current).toEqual({ id: "a", kind: "worktree_create", target: "feature" })
     act(() => closeJobModal())
     expect(result.current).toBeUndefined()
+  })
+
+  // What the modal shows is settled when it opens. The job itself may be
+  // dismissed a moment later — by the server's expiry, or from another tab —
+  // and tearing the modal down mid-read is not an answer to that.
+  it("keeps the open modal after its job leaves the store", () => {
+    const { result } = renderHook(() => useOpenJobModal())
+    act(() => {
+      setJobs([job()])
+      openJobModal(job())
+      applyJob(job({ dismissed: true }))
+    })
+    expect(result.current).toEqual({ id: "a", kind: "worktree_create", target: "feature" })
   })
 
   it("currentStep is the running step, undefined when none", () => {

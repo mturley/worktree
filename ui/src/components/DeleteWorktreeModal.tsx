@@ -2,7 +2,10 @@ import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { Alert, Button, Checkbox, Group, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { api } from "../api/client"
+import type { Job } from "../api/types"
 import { isFinished } from "../lib/jobsStore"
+import { jobErrorToShow } from "./jobs/jobError"
+import { JOB_GONE_TEXT, JOB_UNKNOWN_TEXT } from "./jobs/jobMessages"
 import { JobStepper } from "./jobs/JobStepper"
 import { useModalJob } from "./jobs/useModalJob"
 
@@ -21,8 +24,12 @@ import { useModalJob } from "./jobs/useModalJob"
  * automatically would throw them away. The server drops a cleanly succeeded
  * job from the store shortly after it finishes, so the modal keeps the last
  * job it saw.
+ *
+ * With `onStarted` the modal is only the confirmation form: it hands the
+ * started job over and expects to be closed, so that whoever is better placed
+ * to outlive the delete can show the rest.
  */
-export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initialJobId, onClose, onDeleted }: {
+export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initialJobId, onClose, onDeleted, onStarted }: {
   opened: boolean
   path?: string
   name?: string
@@ -32,11 +39,13 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   onClose: () => void
   /** Called when the user acknowledges a completed delete. */
   onDeleted: () => void
+  /** Called with the job the Delete button started, instead of showing it. */
+  onStarted?: (job: Job) => void
 }) {
   const [typed, setTyped] = useState("")
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [starting, setStarting] = useState(false)
-  const { jobId, job, busy, error, setError, track, act, dismissFinished } =
+  const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
     useModalJob(opened, initialJobId, path)
   // A running delete no longer blocks leaving: it carries on server-side.
   useUnsavedChanges(opened && typed !== "" && !jobId)
@@ -58,7 +67,8 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
     setError(null)
     try {
       const res = await api.deleteWorktree({ path, delete_branch: deleteBranch })
-      track(res.job)
+      if (onStarted) onStarted(res.job)
+      else track(res.job)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -86,15 +96,17 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   }
 
   const title = job ? job.title : name ? `Delete worktree ${name}` : "Delete worktree"
-  const question = job?.state === "needs_answer" ? job.question : null
-  const failed = job?.state === "failed" || job?.state === "interrupted"
-  const showError = failed && job.error !== undefined
-    && !job.steps.some((s) => s.detail === job.error)
+  // A job that ended out of sight is over, whatever its last state said.
+  const question = job?.state === "needs_answer" && !gone ? job.question : null
+  const failed = !gone && (job?.state === "failed" || job?.state === "interrupted")
+  const showError = job !== undefined && !gone ? jobErrorToShow(job) : undefined
+  const running = job?.state === "running" && !gone
 
   return (
     <Modal opened={opened} onClose={close} title={title} size="lg">
       <Stack gap="sm">
-        {!job && (
+        {unknown && <Text size="sm">{JOB_UNKNOWN_TEXT}</Text>}
+        {!job && !unknown && (
           <>
             <Text size="sm">
               This removes the worktree directory and everything worktree tracks for it —
@@ -113,10 +125,10 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
           </>
         )}
 
-        {job && <JobStepper steps={job.steps} />}
+        {job && <JobStepper steps={job.steps} quiet={gone} />}
 
         {error && <Alert color="red" variant="light">{error}</Alert>}
-        {showError && <Alert color="red" variant="light">{job.error}</Alert>}
+        {showError && <Alert color="red" variant="light">{showError}</Alert>}
 
         {question?.key === "remove_directory" && (
           <Alert color="yellow" variant="light">
@@ -126,12 +138,14 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
           </Alert>
         )}
 
-        {job?.state === "running" && (
+        {gone && <Text size="xs" c="dimmed">{JOB_GONE_TEXT}</Text>}
+
+        {running && (
           <Text size="xs" c="dimmed">This keeps running if you close this window.</Text>
         )}
 
         <Group justify="flex-end">
-          {!job && (
+          {!job && !unknown && (
             <>
               <Button variant="default" onClick={onClose}>Cancel</Button>
               <Button
@@ -166,8 +180,9 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
               <Button onClick={() => void ok()}>OK</Button>
             </>
           )}
-          {job?.state === "succeeded" && <Button onClick={() => void ok()}>OK</Button>}
-          {job?.state === "running" && <Button variant="default" onClick={close}>Close</Button>}
+          {job?.state === "succeeded" && !gone && <Button onClick={() => void ok()}>OK</Button>}
+          {running && <Button variant="default" onClick={close}>Close</Button>}
+          {(gone || unknown) && <Button onClick={close}>Close</Button>}
         </Group>
       </Stack>
     </Modal>

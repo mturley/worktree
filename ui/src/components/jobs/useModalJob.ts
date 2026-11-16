@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { api } from "../../api/client"
 import type { Job } from "../../api/types"
-import { attachJob, useJob } from "../../lib/jobsStore"
+import { attachJob, isFinished, useJob } from "../../lib/jobsStore"
 
 /**
  * The plumbing a modal needs to follow one background job: the job's id (from
  * a prop or from the start response), the job itself from the store, the last
  * job seen (the server drops a finished job from the store, but the modal must
- * keep showing it), the toast suppression while open, and the request helpers.
+ * keep showing it), whether the job ended out of sight, the toast suppression
+ * while open, and the request helpers.
  *
  * State resets whenever the modal is (re)opened or retargeted (another job,
  * or a changed `resetKey`).
@@ -15,22 +16,36 @@ import { attachJob, useJob } from "../../lib/jobsStore"
 export function useModalJob(opened: boolean, initialJobId: string | undefined, resetKey?: string) {
   const [jobId, setJobId] = useState<string | undefined>(initialJobId)
   const [lastSeen, setLastSeen] = useState<Job | undefined>(undefined)
+  const [sawLive, setSawLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const live = useJob(jobId)
   const job = live ?? (lastSeen?.id === jobId ? lastSeen : undefined)
 
+  // Over plain HTTP a hidden tab gives its stream back, so a job can run to
+  // the end, be reported, and expire while this tab hears none of it. On
+  // reconnect it is simply absent, and the last state seen — a spinner, "this
+  // keeps running" — would otherwise stand forever. An unfinished job cannot
+  // leave the store any other way, so its absence is the news: it is over.
+  // `!live` alone will not do: between the start response and the first
+  // stream event there is legitimately no job in the store yet.
+  const gone = sawLive && !live && lastSeen !== undefined && !isFinished(lastSeen)
+
   useEffect(() => {
     if (opened) {
       setJobId(initialJobId)
       setLastSeen(undefined)
+      setSawLive(false)
       setBusy(false)
       setError(null)
     }
   }, [opened, initialJobId, resetKey])
 
   useEffect(() => {
-    if (live) setLastSeen(live)
+    if (live) {
+      setLastSeen(live)
+      setSawLive(true)
+    }
   }, [live])
 
   // The job's toast stays hidden while this modal shows it.
@@ -43,6 +58,7 @@ export function useModalJob(opened: boolean, initialJobId: string | undefined, r
   const track = useCallback((started: Job) => {
     setJobId(started.id)
     setLastSeen(started)
+    setSawLive(false)
   }, [])
 
   // Run an action on the job; a failed request shows in the alert.
@@ -72,5 +88,11 @@ export function useModalJob(opened: boolean, initialJobId: string | undefined, r
     }
   }, [jobId])
 
-  return { jobId, job, busy, error, setError, track, act, dismissFinished }
+  // A modal opened on a job id nobody in this tab has ever seen — a toast
+  // acted on in another tab, a link followed late — has nothing to show and
+  // must not fall back to the confirmation form for a worktree it has no name
+  // for.
+  const unknown = jobId !== undefined && job === undefined
+
+  return { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished }
 }
