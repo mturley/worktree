@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/mturley/watcher/slack"
@@ -206,6 +208,13 @@ func runUI(cmd *cobra.Command, args []string) error {
 	if !uiNoOpen && !uiAPIOnly {
 		go openBrowserWhenUp(uiPort, detailPathForCwd(conn))
 	}
+
+	// Refuse to stop while a job runs; a second signal within 5s forces
+	// (internal/webui/stop.go).
+	stopSigs := make(chan os.Signal, 4)
+	signal.Notify(stopSigs, syscall.SIGTERM, os.Interrupt)
+	go srv.GuardStop(stopSigs, os.Exit, time.Now)
+
 	return srv.Start()
 }
 
