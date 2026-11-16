@@ -807,6 +807,233 @@ func TestDismissRemoveFailurePublishesNothing(t *testing.T) {
 	}
 }
 
+// orphan saves a row this process is supposed to be running but is not: the
+// shape an outcome whose save failed leaves behind.
+func orphan(t *testing.T, conn *sql.DB, id, target string) Job {
+	t.Helper()
+	j := Job{
+		ID: id, Kind: "create", Title: "T", Target: target,
+		State: StateRunning, Request: json.RawMessage(`{"x":1}`), PID: os.Getpid(),
+		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
+		Steps: []Step{
+			{Key: "a", Label: "A", Status: StepDone},
+			{Key: "b", Label: "B", Status: StepRunning},
+		},
+	}
+	if err := save(conn, j); err != nil {
+		t.Fatal(err)
+	}
+	return j
+}
+
+func wantInterrupted(t *testing.T, j Job) {
+	t.Helper()
+	if j.State != StateInterrupted {
+		t.Fatalf("state %q, want interrupted", j.State)
+	}
+	if j.FinishedAt == "" {
+		t.Error("finished_at not set")
+	}
+	want := []Step{
+		{Key: "a", Label: "A", Status: StepDone},
+		{Key: "b", Label: "B", Status: StepFailed, Detail: interruptedDetail},
+	}
+	if !reflect.DeepEqual(j.Steps, want) {
+		t.Errorf("steps %+v, want %+v", j.Steps, want)
+	}
+}
+
+func TestVisibleHealsOrphanedRun(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	m.Register(newFake("create", plan2()...).kind())
+
+	_, changes, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	j := orphan(t, conn, "5555555555555555", "/t")
+	visible, err := m.Visible()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visible) != 1 {
+		t.Fatalf("visible %+v, want one job", visible)
+	}
+	wantInterrupted(t, visible[0])
+	wantInterrupted(t, mustLoad(t, conn, j.ID))
+	// Every client hears about it, not just the one that asked.
+	if ev := nextJob(t, changes); ev.ID != j.ID || ev.State != StateInterrupted {
+		t.Fatalf("published %+v, want %s interrupted", ev, j.ID)
+	}
+}
+
+func TestSubscribeSnapshotHealsOrphanedRun(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	m.Register(newFake("create", plan2()...).kind())
+	orphan(t, conn, "5555555555555555", "/t")
+
+	snapshot, _, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	if len(snapshot) != 1 {
+		t.Fatalf("snapshot %+v, want one job", snapshot)
+	}
+	wantInterrupted(t, snapshot[0])
+}
+
+func TestDismissHealsOrphanedRun(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	m.Register(newFake("create", plan2()...).kind())
+	j := orphan(t, conn, "5555555555555555", "/t")
+
+	if err := m.Dismiss(j.ID); err != nil {
+		t.Fatalf("dismiss: %v, want it to succeed", err)
+	}
+	if _, err := load(conn, j.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("load after dismiss: %v, want ErrNotFound", err)
+	}
+}
+
+func TestRetryHealsOrphanedRun(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+	j := orphan(t, conn, "5555555555555555", "/t")
+
+	again, err := m.Retry(j.ID)
+	if err != nil {
+		t.Fatalf("retry: %v, want it to succeed", err)
+	}
+	if again.State != StateRunning {
+		t.Fatalf("retried job %+v", again)
+	}
+	if got := string(f.startedWith(t)); got != `{"x":1}` {
+		t.Fatalf("run got request %s, want the stored one", got)
+	}
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+}
+
+func TestStartDoesNotAttachToOrphanedRun(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+	j := orphan(t, conn, "5555555555555555", "/t")
+
+	fresh, attached, err := m.Start("create", "T", "/t", json.RawMessage(`{"x":2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attached || fresh.ID == j.ID {
+		t.Fatalf("start got %+v attached %v, want a new job", fresh, attached)
+	}
+	if got := string(f.startedWith(t)); got != `{"x":2}` {
+		t.Fatalf("run got request %s", got)
+	}
+	wantInterrupted(t, mustLoad(t, conn, j.ID))
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+}
+
+// The whole path: a run whose outcome cannot be saved leaves a running row with
+// no goroutine behind it. It must not stay that way, or nothing could ever
+// dismiss it and that target could never be worked on again.
+func TestUnsavableOutcomeEndsUpInterrupted(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+
+	job, _, err := m.Start("create", "T", "/t", json.RawMessage(`{"x":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.startedWith(t)
+	f.step(t, Step{Key: "b", Label: "B", Status: StepRunning})
+	// Every save fails from here, but the row survives: exactly what a disk
+	// that briefly refuses writes looks like.
+	if _, err := conn.Exec(`ALTER TABLE jobs RENAME TO jobs_hidden`); err != nil {
+		t.Fatal(err)
+	}
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+	if _, err := conn.Exec(`ALTER TABLE jobs_hidden RENAME TO jobs`); err != nil {
+		t.Fatal(err)
+	}
+
+	visible, err := m.Visible()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visible) != 1 || visible[0].State != StateInterrupted {
+		t.Fatalf("visible %+v, want the job interrupted", visible)
+	}
+	if err := m.Dismiss(job.ID); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	fresh, attached, err := m.Start("create", "T", "/t", json.RawMessage(`{"x":2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attached || fresh.ID == job.ID {
+		t.Fatalf("start got %+v attached %v, want a new job", fresh, attached)
+	}
+	f.startedWith(t)
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+}
+
+// An outcome has no later save to correct it, so a save that fails once is
+// tried again rather than abandoned.
+func TestOutcomeSaveIsRetried(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+
+	var mu sync.Mutex
+	var logs []string
+	m.Logf = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		logs = append(logs, fmt.Sprintf(format, args...))
+	}
+	job, _, err := m.Start("create", "T", "/t", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.startedWith(t)
+
+	// Installed under the manager's own lock: every save runs under it.
+	var attempts int
+	m.mu.Lock()
+	real := m.saveJob
+	m.saveJob = func(j Job) error {
+		attempts++
+		if attempts == 1 {
+			return errors.New("disk is busy")
+		}
+		return real(j)
+	}
+	m.mu.Unlock()
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+
+	if attempts < 2 {
+		t.Fatalf("outcome saved %d times, want a retry", attempts)
+	}
+	if got := mustLoad(t, conn, job.ID); got.State != StateSucceeded {
+		t.Fatalf("stored job %+v, want succeeded", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(logs) != 0 {
+		t.Fatalf("logged %v, want nothing: the save succeeded", logs)
+	}
+}
+
 // Inside a run there is no caller to return a save failure to, so it has to
 // reach Logf: otherwise the published state and the stored row part silently.
 func TestSaveFailureDuringRunReachesLogf(t *testing.T) {

@@ -62,6 +62,11 @@ type Manager struct {
 	conn *sql.DB
 	pid  int
 
+	// saveJob persists one job's row. Every save goes through it, under mu,
+	// so a test can make one fail. A field, not a global: the package keeps
+	// no mutable state.
+	saveJob func(Job) error
+
 	// mu guards everything below, and every save, publish and snapshot, so a
 	// subscriber never sees a gap between its snapshot and its changes.
 	mu      sync.Mutex
@@ -76,7 +81,7 @@ type Manager struct {
 
 // New returns a manager storing jobs in conn and stamping them with pid.
 func New(conn *sql.DB, pid int) *Manager {
-	return &Manager{
+	m := &Manager{
 		SuccessTTL: defaultSuccessTTL,
 		conn:       conn,
 		pid:        pid,
@@ -85,6 +90,8 @@ func New(conn *sql.DB, pid int) *Manager {
 		subs:       map[int]chan Job{},
 		timers:     map[string]*time.Timer{},
 	}
+	m.saveJob = func(j Job) error { return save(conn, j) }
+	return m
 }
 
 // Register adds a kind; a kind of the same name is replaced.
@@ -118,6 +125,54 @@ func upsertStep(steps []Step, s Step) []Step {
 	return append(out, s)
 }
 
+// interrupted returns j as a run that stopped where it stood: the step it was
+// on failed, and the job is finished so the user can dismiss or retry it.
+func interrupted(j Job, stamp string) Job {
+	steps := make([]Step, len(j.Steps))
+	copy(steps, j.Steps)
+	for i := range steps {
+		if steps[i].Status == StepRunning {
+			steps[i].Status = StepFailed
+			steps[i].Detail = interruptedDetail
+		}
+	}
+	j.Steps = steps
+	j.State = StateInterrupted
+	j.UpdatedAt = stamp
+	j.FinishedAt = stamp
+	return j
+}
+
+// healLocked turns an orphan — a row this process is supposed to be running
+// but has no goroutine for, which is what an outcome whose save failed leaves
+// behind — into an interrupted job, and tells every subscriber. Without it the
+// row would say "running" forever: nothing could dismiss or retry it, and
+// every later Start on its target would attach to a job that will never move.
+// A rewrite that cannot be saved leaves the job as it was, to be tried again.
+func (m *Manager) healLocked(j Job) Job {
+	if j.State != StateRunning || j.PID != m.pid {
+		return j
+	}
+	if _, running := m.exec[j.ID]; running {
+		return j
+	}
+	healed := interrupted(j, now())
+	if err := m.saveJob(healed); err != nil {
+		m.logfLocked("job %s: marking an abandoned run interrupted: %v", j.ID, err)
+		return j
+	}
+	m.publishLocked(healed)
+	return healed
+}
+
+// healAllLocked heals every orphan in list, in place.
+func (m *Manager) healAllLocked(list []Job) []Job {
+	for i, j := range list {
+		list[i] = m.healLocked(j)
+	}
+	return list
+}
+
 // Recover turns the rows a dead server left behind into states the user can
 // act on. It is called once at server start, before any Start.
 func (m *Manager) Recover() error {
@@ -131,19 +186,7 @@ func (m *Manager) Recover() error {
 	for _, j := range list {
 		switch {
 		case j.State == StateRunning:
-			steps := make([]Step, len(j.Steps))
-			copy(steps, j.Steps)
-			for i := range steps {
-				if steps[i].Status == StepRunning {
-					steps[i].Status = StepFailed
-					steps[i].Detail = interruptedDetail
-				}
-			}
-			j.Steps = steps
-			j.State = StateInterrupted
-			j.UpdatedAt = stamp
-			j.FinishedAt = stamp
-			if err := save(m.conn, j); err != nil {
+			if err := m.saveJob(interrupted(j, stamp)); err != nil {
 				return err
 			}
 		case j.State == StateSucceeded && !j.HasFailedStep():
@@ -170,9 +213,15 @@ func (m *Manager) Start(kind, title, target string, request json.RawMessage) (Jo
 		return Job{}, false, err
 	}
 	for _, j := range open {
-		if j.Kind == kind && j.Target == target {
-			return j, true, nil
+		if j.Kind != kind || j.Target != target {
+			continue
 		}
+		// An orphan is not something to attach to: it has no goroutine, so
+		// the caller would wait on a job that can never finish.
+		if j = m.healLocked(j); j.Finished() {
+			break
+		}
+		return j, true, nil
 	}
 	id, err := newID()
 	if err != nil {
@@ -204,7 +253,7 @@ func (m *Manager) beginLocked(k Kind, job Job) (Job, error) {
 	job.UpdatedAt = now()
 	// Save before publishing: a job the subscribers are told is running, but
 	// whose goroutine never starts, is a toast nothing can ever clear.
-	if err := save(m.conn, job); err != nil {
+	if err := m.saveJob(job); err != nil {
 		return Job{}, err
 	}
 	m.exec[job.ID] = job
@@ -275,12 +324,39 @@ func (m *Manager) finish(id string, out Outcome) {
 	} else {
 		job.FinishedAt = ""
 	}
-	if err := m.saveAndPublishLocked(job); err != nil {
+	// Unlike a step, an outcome has no later save to correct it, so it is
+	// worth a few attempts. If they all fail the row stays running with no
+	// goroutine behind it, and healLocked is what picks it up.
+	err := m.saveOutcomeLocked(job)
+	m.publishLocked(job)
+	if err != nil {
 		m.logfLocked("job %s: saving the %s outcome: %v", id, job.State, err)
 	}
 	if job.State == StateSucceeded && !job.HasFailedStep() {
 		m.expireLaterLocked(job.ID)
 	}
+}
+
+// outcomeSaveAttempts and outcomeSaveBackoff are how hard the end of a run is
+// tried before the row is left for healLocked to find. The manager's lock is
+// held throughout, so the backoff stays short.
+const (
+	outcomeSaveAttempts = 3
+	outcomeSaveBackoff  = 20 * time.Millisecond
+)
+
+// saveOutcomeLocked persists a finished run, retrying a transient failure.
+func (m *Manager) saveOutcomeLocked(job Job) error {
+	var err error
+	for attempt := 0; attempt < outcomeSaveAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(outcomeSaveBackoff)
+		}
+		if err = m.saveJob(job); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // expireLaterLocked dismisses a clean success once SuccessTTL has passed.
@@ -371,6 +447,7 @@ func (m *Manager) Retry(id string) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	job = m.healLocked(job)
 	if job.State != StateFailed && job.State != StateInterrupted {
 		return Job{}, ErrWrongState
 	}
@@ -389,6 +466,7 @@ func (m *Manager) Dismiss(id string) error {
 	if err != nil {
 		return err
 	}
+	job = m.healLocked(job)
 	if !job.Finished() {
 		return ErrWrongState
 	}
@@ -399,7 +477,11 @@ func (m *Manager) Dismiss(id string) error {
 func (m *Manager) Visible() ([]Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return all(m.conn)
+	list, err := all(m.conn)
+	if err != nil {
+		return nil, err
+	}
+	return m.healAllLocked(list), nil
 }
 
 // Running is the jobs executing in this process right now.
@@ -424,6 +506,9 @@ func (m *Manager) Subscribe() ([]Job, <-chan Job, func()) {
 	if err != nil {
 		snapshot = nil
 	}
+	// Before this subscriber is registered, so the heal's own publish does
+	// not arrive as a change to a snapshot that already has it.
+	snapshot = m.healAllLocked(snapshot)
 	ch := make(chan Job, changeBuffer)
 	id := m.nextSub
 	m.nextSub++
@@ -448,7 +533,7 @@ func (m *Manager) dropLocked(id int) {
 // publishes even if the save failed: the change really happened, and a client
 // is better off seeing it than waiting for one that never comes.
 func (m *Manager) saveAndPublishLocked(job Job) error {
-	err := save(m.conn, job)
+	err := m.saveJob(job)
 	m.publishLocked(job)
 	return err
 }
