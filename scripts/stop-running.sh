@@ -13,18 +13,32 @@ running_pids() {   # PIDs whose executable is exactly $target
 	done
 	echo $out
 }
-busy() { "$built" jobs --running 2>/dev/null || true; }
+# busy prints the running jobs, one line each, and nothing when idle. A checker
+# that cannot run (missing, stale binary without `jobs`, crash) is NOT idle: we
+# cannot know, and a wrong guess kills a job in flight. It reports a marker
+# line instead, which routes to ask rather than to a kill.
+busy() {
+	out=$("$built" jobs --running 2>/dev/null)
+	if [ $? != 0 ]; then
+		echo "(cannot check for running jobs: $built failed)"
+	else
+		echo "$out"
+	fi
+}
+
+# The terminal ask reads from; overridable so tests can feed answers.
+tty=${STOP_RUNNING_TTY:-/dev/tty}
 
 # ask prints the busy jobs and returns 0 to look again, 2 to force.
 ask() {
 	echo "worktree ui is busy:"
 	echo "$1" | sed 's/^/  /'
-	if [ -n "${NONINTERACTIVE:-}" ] || [ ! -r /dev/tty ]; then
+	if [ -n "${NONINTERACTIVE:-}" ] || [ ! -r "$tty" ]; then
 		echo "Aborting: a job is running." >&2; exit 1
 	fi
 	while :; do
 		printf '[A]bort, [R]etry, [F]orce? '
-		read -r answer </dev/tty || exit 1
+		read -r answer <"$tty" || exit 1
 		case "$answer" in
 			[Aa]*) echo "Aborted."; exit 1 ;;
 			[Rr]*) return 0 ;;
@@ -34,6 +48,7 @@ ask() {
 }
 
 force=0
+termed=0
 while :; do
 	pids=$(running_pids)
 	[ -z "$pids" ] && exit 0
@@ -48,6 +63,11 @@ while :; do
 		continue
 	fi
 	echo "Stopping running $(basename "$target") server(s) [$target]:$pids"
+	# The server treats a second signal inside its 5s shutdown window as a
+	# request to force exit. After a Retry, wait that window out before
+	# sending another TERM.
+	[ "$termed" = 1 ] && sleep 5
+	termed=1
 	kill -TERM $pids 2>/dev/null || true
 	sleep 2
 	pids=$(running_pids)
