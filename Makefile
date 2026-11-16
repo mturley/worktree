@@ -42,9 +42,11 @@ build-cli:
 # PID's actual executable (lsof txt fd) is the exact file we're replacing before
 # signalling it, so we never touch an unrelated process. A server with a job in
 # flight is never killed without asking; NONINTERACTIVE=1 aborts instead.
+# STOP_RUNNING_TTY, which redirects that question away from the terminal, is
+# the tests' alone: it is cleared here so a stray export cannot answer it.
 stop-running: build
 	@target_dir=$$(cd "$(INSTALL_DIR)" 2>/dev/null && pwd -P) || target_dir="$(INSTALL_DIR)"; \
-	NONINTERACTIVE="$(NONINTERACTIVE)" sh scripts/stop-running.sh "$$target_dir/$(BINARY_NAME)" "$(BIN_DIR)/$(BINARY_NAME)" $(SERVER_CMDS)
+	NONINTERACTIVE="$(NONINTERACTIVE)" env -u STOP_RUNNING_TTY sh scripts/stop-running.sh "$$target_dir/$(BINARY_NAME)" "$(BIN_DIR)/$(BINARY_NAME)" $(SERVER_CMDS)
 
 install: build stop-running
 	@if [ ! -f $(BIN_DIR)/$(BINARY_NAME) ]; then \

@@ -121,6 +121,31 @@ func TestJobsJSONShape(t *testing.T) {
 	}
 }
 
+// A database last migrated by an older binary is still readable: `make
+// install` asks this binary whether the running server is busy, and a DB that
+// is merely behind must never read as "no jobs" — that is how a job in flight
+// gets killed.
+func TestJobsReadsADatabaseBehindThisBinary(t *testing.T) {
+	stubPidAlive(t, 111)
+	seedJobs(t, jobSeed{"j1", "Delete worktree foo", "running", 111})
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`PRAGMA user_version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	out, err := runCLI(t, "jobs", "--running")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if out != "Delete worktree foo — Remove worktree directory\n" {
+		t.Fatalf("got %q, want the running job", out)
+	}
+}
+
 func TestJobsNoDatabase(t *testing.T) {
 	t.Setenv("WORKTREE_DB", filepath.Join(t.TempDir(), "missing.db"))
 	for _, args := range [][]string{{"jobs"}, {"jobs", "--running"}} {

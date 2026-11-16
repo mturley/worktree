@@ -542,6 +542,45 @@ func TestOpenReadAtBehindWorktreeSchema(t *testing.T) {
 	}
 }
 
+func TestOpenReadAnyVersionAtOpensAnOlderSchema(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "w.db")
+	conn, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion-1)); err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	ro, err := OpenReadAnyVersionAt(p)
+	if err != nil {
+		t.Fatalf("OpenReadAnyVersionAt on an older schema: %v", err)
+	}
+	defer ro.Close()
+	var v int
+	if err := ro.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != schemaVersion-1 {
+		t.Errorf("user_version = %d: it migrated", v)
+	}
+	// Read-only, like every other read handle.
+	if _, err := ro.Exec(`PRAGMA user_version = 1`); err == nil {
+		t.Error("write through OpenReadAnyVersionAt succeeded")
+	}
+}
+
+func TestOpenReadAnyVersionAtMissingFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "absent")
+	if _, err := OpenReadAnyVersionAt(filepath.Join(dir, "w.db")); !errors.Is(err, ErrNoDatabase) {
+		t.Fatalf("err = %v, want ErrNoDatabase", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("OpenReadAnyVersionAt created the directory (stat err %v)", statErr)
+	}
+}
+
 func TestOpenReadAtBehindWatcherSchema(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "w.db")
 	conn, err := OpenAt(p)

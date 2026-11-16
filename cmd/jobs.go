@@ -59,9 +59,18 @@ type jobRow struct {
 func runJobs(cmd *cobra.Command, args []string) error {
 	rows := []jobRow{}
 	conn, err := wdb.OpenRead()
+	if errors.Is(err, wdb.ErrSchemaBehind) {
+		// A schema older than this binary's says nothing about the jobs
+		// table, which may well be there and hold a job in flight. Read it
+		// anyway: `make install` asks this command whether the running
+		// server is busy, and answering "no jobs" because a migration is
+		// pending is how a job gets killed. jobs.Unfinished copes with the
+		// table being absent.
+		conn, err = wdb.OpenReadAnyVersion()
+	}
 	switch {
-	case errors.Is(err, wdb.ErrNoDatabase), errors.Is(err, wdb.ErrSchemaBehind):
-		// No database, or one older than jobs: there are no jobs.
+	case errors.Is(err, wdb.ErrNoDatabase):
+		// No database at all: there are no jobs.
 	case err != nil:
 		return err
 	default:

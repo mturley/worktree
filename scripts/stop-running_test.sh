@@ -128,13 +128,33 @@ run_case
 [ "$(cat "$T/kill.log")" = "-TERM 4242" ] || fail "gap: kill log = '$(cat "$T/kill.log")'"
 case "$out" in *"worktree ui is busy:"*) ;; *) fail "gap: no busy header in: $out" ;; esac
 
-# --- alive after TERM and no job: KILL
+# --- alive after TERM and no job: asks; non-interactively that is an abort,
+#     never a kill. An idle server exits at once, so one that survived SIGTERM
+#     is refusing or hung and a human decides.
 new_case stuck
 echo 4242 >"$T/pids"
 run_case
-[ "$code" = 0 ] || fail "stuck: exit $code, want 0"
+[ "$code" = 1 ] || fail "stuck: exit $code, want 1"
+[ "$(cat "$T/kill.log")" = "-TERM 4242" ] || fail "stuck: kill log = '$(cat "$T/kill.log")'"
+case "$out" in *"did not stop after SIGTERM"*) ;; *) fail "stuck: no reason in: $out" ;; esac
+
+# --- same, but the user chooses Force: KILL, exit 0
+new_case stuckforce
+echo 4242 >"$T/pids"
+run_tty f
+[ "$code" = 0 ] || fail "stuckforce: exit $code, want 0 ($out)"
 [ "$(cat "$T/kill.log")" = "-TERM 4242
--KILL 4242" ] || fail "stuck: kill log = '$(cat "$T/kill.log")'"
+-KILL 4242" ] || fail "stuckforce: kill log = '$(cat "$T/kill.log")'"
+
+# --- no terminal to ask on: says so, and still never kills
+new_case notty
+echo 4242 >"$T/pids"
+echo "Delete worktree foo — Remove worktree directory" >"$T/jobs"
+out=$(PATH="$T/bin:/usr/bin:/bin" NONINTERACTIVE= STOP_RUNNING_TTY="$T/absent-tty" sh "$T/harness.sh" 2>&1 </dev/null)
+code=$?
+[ "$code" = 1 ] || fail "notty: exit $code, want 1"
+[ ! -s "$T/kill.log" ] || fail "notty: kill was called: $(cat "$T/kill.log")"
+case "$out" in *"no terminal to ask on"*) ;; *) fail "notty: no reason in: $out" ;; esac
 
 # --- checker exits non-zero: not idle, never kill
 new_case checkfail
@@ -186,7 +206,8 @@ echo 4242 >"$T/pids"
 echo "New worktree x — Create" >"$T/jobs.2"
 : >"$T/jobs.3"
 : >"$T/jobs.4"
-run_tty r
+run_tty "r
+f"
 [ "$code" = 0 ] || fail "retry: exit $code, want 0 ($out)"
 want="-TERM 4242
 sleep 2
