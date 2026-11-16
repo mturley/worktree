@@ -5,17 +5,9 @@ import type { Job, JobStep } from "../api/types"
 // the stream's `jobs` and `job` events (hooks/useSSE.ts). Same
 // useSyncExternalStore pattern as checksStore.ts.
 
-/** What JobModalHost needs to render a modal, settled when it is opened. */
-export interface OpenJobModal {
-  id: string
-  kind: string
-  /** The worktree path the job works on. */
-  target: string
-}
-
 let jobs: Job[] = []
 let attached: ReadonlySet<string> = new Set()
-let openModal: OpenJobModal | undefined
+let openModal: Job | undefined
 const subscribers = new Set<() => void>()
 
 function emit(): void {
@@ -88,13 +80,16 @@ export function useAttachedJobIds(): ReadonlySet<string> {
 
 /**
  * A toast, or the control that started the job, asks for its modal;
- * JobModalHost answers. Which modal to show is decided here, once, from the
- * job as it is now: the server drops a clean success ten seconds later, and
- * another tab can dismiss it sooner, neither of which should take the modal
- * away from somebody reading it.
+ * JobModalHost answers.
+ *
+ * The job as it is now is kept, and that snapshot is what the modal is built
+ * from: which modal to show, the worktree it is about, and something to render
+ * before the stream has said anything. The server drops a clean success ten
+ * seconds later and another tab can dismiss it sooner, neither of which should
+ * take the modal away from somebody reading it.
  */
 export function openJobModal(job: Job): void {
-  openModal = { id: job.id, kind: job.kind, target: job.target }
+  openModal = job
   emit()
 }
 
@@ -103,7 +98,8 @@ export function closeJobModal(): void {
   emit()
 }
 
-export function useOpenJobModal(): OpenJobModal | undefined {
+/** The job a modal is open on, as it was when it was opened. */
+export function useOpenJobModal(): Job | undefined {
   return useSyncExternalStore(subscribe, () => openModal)
 }
 

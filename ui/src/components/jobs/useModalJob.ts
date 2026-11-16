@@ -13,9 +13,19 @@ import { attachJob, isFinished, useJob } from "../../lib/jobsStore"
  * State resets whenever the modal is (re)opened or retargeted (another job,
  * or a changed `resetKey`).
  */
-export function useModalJob(opened: boolean, initialJobId: string | undefined, resetKey?: string) {
+export function useModalJob(
+  opened: boolean,
+  initialJobId: string | undefined,
+  resetKey?: string,
+  /**
+   * The job as whoever opened the modal last saw it. It stands in until the
+   * stream says otherwise, so a modal opened on a job the server has only just
+   * started has its steps to show rather than nothing at all.
+   */
+  initialJob?: Job,
+) {
   const [jobId, setJobId] = useState<string | undefined>(initialJobId)
-  const [lastSeen, setLastSeen] = useState<Job | undefined>(undefined)
+  const [lastSeen, setLastSeen] = useState<Job | undefined>(initialJob)
   const [sawLive, setSawLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +44,7 @@ export function useModalJob(opened: boolean, initialJobId: string | undefined, r
   useEffect(() => {
     if (opened) {
       setJobId(initialJobId)
-      setLastSeen(undefined)
+      setLastSeen(initialJob)
       setSawLive(false)
       setBusy(false)
       setError(null)

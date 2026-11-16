@@ -2846,8 +2846,8 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   (`useSSE`), with the `useSyncExternalStore` hooks `useJobs` / `useJob`. It
   also keeps two pieces of tab-local state: which jobs a modal in this tab is
   showing (`attachJob`, counted, so a toast stays hidden until the last modal
-  detaches) and which modal is open (`openJobModal(job)` → `{id, kind,
-  target}`, read with `useOpenJobModal`).
+  detaches) and which modal is open (`openJobModal(job)` keeps the job as it
+  was then, read with `useOpenJobModal`).
   `JobToasts` (mounted in `App.tsx`) is one toast per visible job, hidden
   while attached: a spinner beside the title while the job runs and one on
   each running step (`JobStepper`), the question on a
@@ -2866,11 +2866,14 @@ states. Frontend: `ui/src/components/settings/LogsPanel.tsx`,
   confirmation form — `onStarted` hands the started job to `openJobModal` and
   closes it — and the host shows the rest, invalidating `["tasks"]` and
   navigating to `/` when the route being viewed is the deleted worktree's own
-  page. The host renders by the kind remembered at open time and closes only
+  page. The host renders from the job as it was at open time and closes only
   on `closeJobModal`, so the server's expiry and another tab's dismissal
   cannot take it away mid-read; a kind it has no branch for opens nothing.
-  `NewWorktreeModal` is also opened from `HomePage`, whose mount point does
-  not go away, so create needs no hand-off.
+  That snapshot also goes to the modal as `initialJob` and seeds `lastSeen`,
+  because the start response and the job's first stream event race: without it
+  a modal opened straight from a start would have nothing to show until the
+  stream caught up. `NewWorktreeModal` is also opened from `HomePage`, whose
+  mount point does not go away, so create needs no hand-off.
 - The two modals share `useModalJob` (follow one job from the store, keep the
   last one seen once the server dismisses it, attach for toast suppression,
   and the answer / retry / dismiss calls) and render steps with `JobStepper`.

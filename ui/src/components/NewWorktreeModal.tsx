@@ -7,6 +7,7 @@ import { useEffect, useState } from "react"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { useLocation } from "wouter"
 import { api } from "../api/client"
+import type { Job } from "../api/types"
 import { useCmux } from "../api/cmux"
 import { isFinished } from "../lib/jobsStore"
 import { jobErrorToShow } from "./jobs/jobError"
@@ -22,10 +23,12 @@ import { useModalJob } from "./jobs/useModalJob"
  * so closing it stops nothing. A confirmation parks the job with a question
  * that is answered in place.
  */
-export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
+export function NewWorktreeModal({ opened, jobId: initialJobId, initialJob, onClose }: {
   opened: boolean
   /** Open on this existing job, skipping the form. */
   jobId?: string
+  /** That job as the caller last saw it, until the stream says otherwise. */
+  initialJob?: Job
   onClose: () => void
 }) {
   const qc = useQueryClient()
@@ -44,7 +47,7 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, onClose }: {
   const [wsColor, setWsColor] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
-    useModalJob(opened, initialJobId)
+    useModalJob(opened, initialJobId, undefined, initialJob)
   // Once a job exists the form is moot: the work carries on server-side.
   useUnsavedChanges(
     opened && jobId === undefined

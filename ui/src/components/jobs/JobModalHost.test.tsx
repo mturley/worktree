@@ -106,6 +106,16 @@ describe("JobModalHost", () => {
     expect(screen.getByText("Remove worktree directory")).toBeInTheDocument()
   })
 
+  // The start response and the job's stream event race, so a modal opened
+  // straight from the start response must show the job the caller has in hand
+  // rather than claiming it is no longer running.
+  it("shows a job the store has not heard of yet", async () => {
+    wrap()
+    act(() => openJobModal(job()))
+    expect(await screen.findByText("Remove worktree directory")).toBeInTheDocument()
+    expect(screen.queryByText("This job is no longer running.")).not.toBeInTheDocument()
+  })
+
   it("goes home when the deleted worktree's own page is open", async () => {
     const user = userEvent.setup()
     jobDismiss.mockResolvedValue(undefined)

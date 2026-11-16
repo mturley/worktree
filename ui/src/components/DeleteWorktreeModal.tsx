@@ -29,13 +29,15 @@ import { useModalJob } from "./jobs/useModalJob"
  * started job over and expects to be closed, so that whoever is better placed
  * to outlive the delete can show the rest.
  */
-export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initialJobId, onClose, onDeleted, onStarted }: {
+export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initialJobId, initialJob, onClose, onDeleted, onStarted }: {
   opened: boolean
   path?: string
   name?: string
   branch?: string
   /** Open on this existing job, skipping the confirmation form. */
   jobId?: string
+  /** That job as the caller last saw it, until the stream says otherwise. */
+  initialJob?: Job
   onClose: () => void
   /** Called when the user acknowledges a completed delete. */
   onDeleted: () => void
@@ -46,7 +48,7 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [starting, setStarting] = useState(false)
   const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
-    useModalJob(opened, initialJobId, path)
+    useModalJob(opened, initialJobId, path, initialJob)
   // A running delete no longer blocks leaving: it carries on server-side.
   useUnsavedChanges(opened && typed !== "" && !jobId)
 

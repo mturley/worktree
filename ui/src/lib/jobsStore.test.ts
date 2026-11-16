@@ -85,7 +85,7 @@ describe("jobsStore", () => {
     const { result } = renderHook(() => useOpenJobModal())
     expect(result.current).toBeUndefined()
     act(() => openJobModal(job()))
-    expect(result.current).toEqual({ id: "a", kind: "worktree_create", target: "feature" })
+    expect(result.current).toEqual(job())
     act(() => closeJobModal())
     expect(result.current).toBeUndefined()
   })
@@ -100,7 +100,15 @@ describe("jobsStore", () => {
       openJobModal(job())
       applyJob(job({ dismissed: true }))
     })
-    expect(result.current).toEqual({ id: "a", kind: "worktree_create", target: "feature" })
+    expect(result.current).toEqual(job())
+  })
+
+  // The job a modal is opened on may not have reached the store yet: the
+  // start response and the stream event race.
+  it("opens on a job the store has not heard of", () => {
+    const { result } = renderHook(() => useOpenJobModal())
+    act(() => openJobModal(job({ id: "fresh" })))
+    expect(result.current?.id).toBe("fresh")
   })
 
   it("currentStep is the running step, undefined when none", () => {

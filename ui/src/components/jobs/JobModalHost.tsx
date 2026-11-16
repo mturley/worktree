@@ -40,11 +40,17 @@ export function JobModalHost() {
       if (routedWorktree(location) === open.target) navigate("/")
     }
     return (
-      <DeleteWorktreeModal opened jobId={open.id} onClose={closeJobModal} onDeleted={onDeleted} />
+      <DeleteWorktreeModal
+        opened
+        jobId={open.id}
+        initialJob={open}
+        onClose={closeJobModal}
+        onDeleted={onDeleted}
+      />
     )
   }
   if (open.kind === "worktree_create") {
-    return <NewWorktreeModal opened jobId={open.id} onClose={closeJobModal} />
+    return <NewWorktreeModal opened jobId={open.id} initialJob={open} onClose={closeJobModal} />
   }
   // A kind this build has no modal for: its toast still shows it.
   return null
