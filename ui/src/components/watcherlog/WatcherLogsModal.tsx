@@ -12,15 +12,15 @@ export function WatcherLogsModal({ opened, onClose, fullScreen }: { opened: bool
   return (
     <Modal opened={opened} onClose={onClose} title="Watcher logs" size="xl" fullScreen={fullScreen} closeButtonProps={{ "aria-label": "Close" }}>
       {opened && (
-        <Tabs defaultValue="log" keepMounted={false} variant="pills">
+        <Tabs defaultValue="log" keepMounted={false}>
           <Tabs.List>
             <Tabs.Tab value="log">Watcher log</Tabs.Tab>
             <Tabs.Tab value="status">Resource status</Tabs.Tab>
           </Tabs.List>
-          <Tabs.Panel value="log" pt="sm">
+          <Tabs.Panel value="log" pt="md">
             <LogTab />
           </Tabs.Panel>
-          <Tabs.Panel value="status" pt="sm">
+          <Tabs.Panel value="status" pt="md">
             <ResourceStatusTab />
           </Tabs.Panel>
         </Tabs>
