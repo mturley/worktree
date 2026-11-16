@@ -8,6 +8,8 @@ import { useUnreadFavicon } from "./hooks/useUnreadFavicon"
 import { useTooltipLayer } from "./hooks/useTooltipLayer"
 import { CmuxFollower } from "./components/CmuxFollower"
 import { HomeWorktreeBanner } from "./components/HomeWorktreeBanner"
+import { JobToasts } from "./components/jobs/JobToasts"
+import { JobModalHost } from "./components/jobs/JobModalHost"
 import { UpdateBanner } from "./components/UpdateBanner"
 import { MiniApp } from "./MiniApp"
 import { isMiniRoute } from "./lib/miniMode"
@@ -106,6 +108,10 @@ function FullApp() {
             <Route>Not found</Route>
           </Switch>
           <TaskDetailModal />
+          {/* Every ongoing background job in every tab, and the modal a
+              toast opens; both navigate, so they sit inside the Router. */}
+          <JobToasts />
+          <JobModalHost />
         </TaskModalProvider>
       </SettingsProvider>
     </Router>
