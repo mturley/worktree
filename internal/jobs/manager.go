@@ -53,6 +53,12 @@ type Kind struct {
 type Manager struct {
 	SuccessTTL time.Duration // default 10s; a clean success is dismissed after it
 
+	// Logf, when set, is told about the failures no caller can be: a job's
+	// own goroutine has nobody to return an error to, so a save that fails
+	// there would otherwise part the published state from the stored row in
+	// silence. A field, not a global: the package keeps no mutable state.
+	Logf func(format string, args ...any)
+
 	conn *sql.DB
 	pid  int
 
@@ -196,12 +202,15 @@ func (m *Manager) beginLocked(k Kind, job Job) (Job, error) {
 	job.FinishedAt = ""
 	job.PID = m.pid
 	job.UpdatedAt = now()
-	if err := m.saveAndPublishLocked(job); err != nil {
+	// Save before publishing: a job the subscribers are told is running, but
+	// whose goroutine never starts, is a toast nothing can ever clear.
+	if err := save(m.conn, job); err != nil {
 		return Job{}, err
 	}
 	m.exec[job.ID] = job
 	m.wg.Add(1)
 	go m.execute(k, job.ID, job.Request)
+	m.publishLocked(job)
 	return job, nil
 }
 
@@ -220,7 +229,9 @@ func (m *Manager) execute(k Kind, id string, request json.RawMessage) {
 		job.Steps = upsertStep(job.Steps, s)
 		job.UpdatedAt = now()
 		m.exec[id] = job
-		_ = m.saveAndPublishLocked(job)
+		if err := m.saveAndPublishLocked(job); err != nil {
+			m.logfLocked("job %s: saving step %s: %v", id, s.Key, err)
+		}
 	}
 	m.finish(id, runKind(k, request, report))
 }
@@ -264,7 +275,9 @@ func (m *Manager) finish(id string, out Outcome) {
 	} else {
 		job.FinishedAt = ""
 	}
-	_ = m.saveAndPublishLocked(job)
+	if err := m.saveAndPublishLocked(job); err != nil {
+		m.logfLocked("job %s: saving the %s outcome: %v", id, job.State, err)
+	}
 	if job.State == StateSucceeded && !job.HasFailedStep() {
 		m.expireLaterLocked(job.ID)
 	}
@@ -286,7 +299,17 @@ func (m *Manager) expire(id string) {
 	if job.State != StateSucceeded || job.HasFailedStep() {
 		return
 	}
-	_ = m.dismissLocked(job)
+	if err := m.dismissLocked(job); err != nil {
+		m.logfLocked("job %s: dismissing an expired success: %v", id, err)
+	}
+}
+
+// logfLocked reports a failure nothing is waiting for. The lock is held, so
+// Logf must not call back into the manager.
+func (m *Manager) logfLocked(format string, args ...any) {
+	if m.Logf != nil {
+		m.Logf(format, args...)
+	}
 }
 
 func (m *Manager) stopTimerLocked(id string) {
@@ -296,13 +319,18 @@ func (m *Manager) stopTimerLocked(id string) {
 	}
 }
 
-// dismissLocked publishes the job once more as dismissed, then deletes it.
+// dismissLocked deletes the job, then publishes it once more as dismissed.
+// The delete comes first: telling a client the job is gone while its row
+// survives would leave it in Visible, back on the next reload.
 func (m *Manager) dismissLocked(job Job) error {
 	m.stopTimerLocked(job.ID)
+	if err := remove(m.conn, job.ID); err != nil {
+		return err
+	}
 	job.Dismissed = true
 	job.UpdatedAt = now()
 	m.publishLocked(job)
-	return remove(m.conn, job.ID)
+	return nil
 }
 
 // Answer applies a yes or no to the question a parked job is asking.

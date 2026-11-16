@@ -6,17 +6,50 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	wdb "github.com/mturley/worktree/internal/db"
 )
 
 func newManager(t *testing.T) (*Manager, *sql.DB) {
 	t.Helper()
 	conn := openDB(t)
 	return New(conn, os.Getpid()), conn
+}
+
+// readOnlyPair returns a writable connection to a fresh DB and a second,
+// read-only one to the same file, so a test can make the manager's writes fail
+// while its reads keep working.
+func readOnlyPair(t *testing.T) (write, read *sql.DB) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "w.db")
+	write, err := wdb.OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = write.Close() })
+	read, err = wdb.OpenReadAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = read.Close() })
+	return write, read
+}
+
+// expectNoChange fails if anything is published within a short window.
+func expectNoChange(t *testing.T, ch <-chan Job) {
+	t.Helper()
+	select {
+	case j := <-ch:
+		t.Fatalf("published %+v, want nothing", j)
+	case <-time.After(50 * time.Millisecond):
+	}
 }
 
 // fake is a job kind whose run is driven by the test: it reports the steps the
@@ -720,4 +753,100 @@ func TestRunningListsOnlyExecuting(t *testing.T) {
 	}
 	busy.outcome <- Outcome{State: StateSucceeded}
 	m.Wait()
+}
+
+// A run that cannot be saved must not be announced: nothing would ever clear
+// the toast, because no goroutine and no row exist to produce a later event.
+// Start, Answer and Retry all begin a run through the same code.
+func TestBeginSaveFailurePublishesNothing(t *testing.T) {
+	t.Parallel()
+	_, read := readOnlyPair(t)
+	m := New(read, os.Getpid())
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+
+	_, changes, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	if _, _, err := m.Start("create", "T", "/t", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("start on a read-only DB returned no error")
+	}
+	expectNoChange(t, changes)
+	if running := m.Running(); len(running) != 0 {
+		t.Fatalf("running %+v, want empty", running)
+	}
+	if got := f.calls.Load(); got != 0 {
+		t.Fatalf("run called %d times, want 0", got)
+	}
+	m.Wait()
+}
+
+// A dismissal that cannot delete the row must not be announced either: the
+// client would drop a job that is still in Visible.
+func TestDismissRemoveFailurePublishesNothing(t *testing.T) {
+	t.Parallel()
+	write, read := readOnlyPair(t)
+	job := Job{
+		ID: "4444444444444444", Kind: "create", Title: "T", Target: "/t",
+		State: StateFailed, Steps: []Step{}, Request: json.RawMessage(`{}`),
+		Error: "nope", PID: os.Getpid(), CreatedAt: "2026-01-01T00:00:00Z",
+		UpdatedAt: "2026-01-01T00:00:00Z", FinishedAt: "2026-01-01T00:00:00Z",
+	}
+	if err := save(write, job); err != nil {
+		t.Fatal(err)
+	}
+	m := New(read, os.Getpid())
+
+	_, changes, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	if err := m.Dismiss(job.ID); err == nil {
+		t.Fatal("dismiss on a read-only DB returned no error")
+	}
+	expectNoChange(t, changes)
+	if _, err := load(write, job.ID); err != nil {
+		t.Fatalf("row after a failed dismiss: %v, want it still there", err)
+	}
+}
+
+// Inside a run there is no caller to return a save failure to, so it has to
+// reach Logf: otherwise the published state and the stored row part silently.
+func TestSaveFailureDuringRunReachesLogf(t *testing.T) {
+	t.Parallel()
+	m, conn := newManager(t)
+	var mu sync.Mutex
+	var logs []string
+	m.Logf = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		logs = append(logs, fmt.Sprintf(format, args...))
+	}
+	f := newFake("create", plan2()...)
+	m.Register(f.kind())
+
+	job, _, err := m.Start("create", "T", "/t", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.startedWith(t)
+	if _, err := conn.Exec(`DROP TABLE jobs`); err != nil {
+		t.Fatal(err)
+	}
+	f.step(t, Step{Key: "a", Label: "A", Status: StepRunning})
+	f.outcome <- Outcome{State: StateSucceeded}
+	m.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(logs) != 2 {
+		t.Fatalf("logged %v, want one line for the step and one for the outcome", logs)
+	}
+	for _, want := range []string{job.ID, "step a"} {
+		if !strings.Contains(logs[0], want) {
+			t.Errorf("step failure %q does not mention %q", logs[0], want)
+		}
+	}
+	for _, want := range []string{job.ID, "succeeded"} {
+		if !strings.Contains(logs[1], want) {
+			t.Errorf("outcome failure %q does not mention %q", logs[1], want)
+		}
+	}
 }
