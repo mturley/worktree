@@ -1664,7 +1664,7 @@ to break.
   is its own value, `worktree.subtasksShowCompleted`
   (`lib/subtasksShowCompletedPref.ts`, default on), shared by every task.
 - **The panel lives in one hook.** There is no Tasks tab and no Pin.
-  `useTasksPanel(scope, { selectedResource?, unread? })` returns
+  `useTasksPanel(scope, { selectedResource? })` returns
   `{ panel, expanded }` for every page. `panel` is the always-shown task
   panel (`data-testid="tasks-panel"`, `data-level`), which the page renders
   in its flow just above its tab bar; `expanded` is whether it is expanded.

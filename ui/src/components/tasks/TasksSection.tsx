@@ -92,8 +92,8 @@ export function useTasksPanel(
 
   const toggle = (
     <UnstyledButton
-      // Leads with what it does; the count and the dot are in here too, or a
-      // screen reader would hear neither.
+      // Leads with what it does; the count is in here too, or a
+      // screen reader would not hear it.
       aria-label={`${action} (${open})`}
       aria-expanded={!collapsed}
       onClick={cycle}
