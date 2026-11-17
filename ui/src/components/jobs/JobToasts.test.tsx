@@ -207,8 +207,8 @@ describe("JobToasts", () => {
     await waitFor(() => expect(jobDismiss).toHaveBeenCalledWith("j1"))
   })
 
-  // Collapsed, a finished job used to be a title and nothing else whenever
-  // its detail sat on a step.
+  // Collapsed, a finished job says how it ended even when its detail sits on
+  // a step rather than on the job.
   it("a collapsed finished job says how it ended", async () => {
     const user = userEvent.setup()
     act(() => setJobs([job({

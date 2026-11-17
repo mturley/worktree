@@ -27,6 +27,9 @@ export function useModalJob(
   const [jobId, setJobId] = useState<string | undefined>(initialJobId)
   const [lastSeen, setLastSeen] = useState<Job | undefined>(initialJob)
   const [sawLive, setSawLive] = useState(false)
+  // Set while an answer that ends the job is in flight or done: the server
+  // dismisses the job on that answer, so it leaving the store is expected.
+  const [ending, setEnding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const live = useJob(jobId)
@@ -38,14 +41,16 @@ export function useModalJob(
   // keeps running" — would otherwise stand forever. An unfinished job cannot
   // leave the store any other way, so its absence is the news: it is over.
   // `!live` alone will not do: between the start response and the first
-  // stream event there is legitimately no job in the store yet.
-  const gone = sawLive && !live && lastSeen !== undefined && !isFinished(lastSeen)
+  // stream event there is legitimately no job in the store yet. Nor is it
+  // news when this modal just sent the answer that ended the job.
+  const gone = sawLive && !ending && !live && lastSeen !== undefined && !isFinished(lastSeen)
 
   useEffect(() => {
     if (opened) {
       setJobId(initialJobId)
       setLastSeen(initialJob)
       setSawLive(false)
+      setEnding(false)
       setBusy(false)
       setError(null)
     }
@@ -69,6 +74,7 @@ export function useModalJob(
     setJobId(started.id)
     setLastSeen(started)
     setSawLive(false)
+    setEnding(false)
   }, [])
 
   // Run an action on the job; a failed request shows in the alert.
@@ -87,6 +93,18 @@ export function useModalJob(
     }
   }, [jobId])
 
+  /**
+   * Send an answer the server ends the job on (a "no" with nothing left to
+   * finish). The job then leaves the store, which must not read as having
+   * ended while this tab was away.
+   */
+  const endJob = useCallback(async (fn: (id: string) => Promise<unknown>): Promise<boolean> => {
+    setEnding(true)
+    const ok = await act(fn)
+    if (!ok) setEnding(false)
+    return ok
+  }, [act])
+
   // A finished job is acknowledged by closing it. It may already be gone
   // (another tab, or the server's own expiry), which is fine.
   const dismissFinished = useCallback(async () => {
@@ -104,5 +122,5 @@ export function useModalJob(
   // for.
   const unknown = jobId !== undefined && job === undefined
 
-  return { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished }
+  return { jobId, job, gone, unknown, busy, error, setError, track, act, endJob, dismissFinished }
 }

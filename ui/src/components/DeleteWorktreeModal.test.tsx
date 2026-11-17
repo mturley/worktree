@@ -182,6 +182,22 @@ describe("DeleteWorktreeModal", () => {
     expect(jobAnswer).toHaveBeenCalledWith("j1", "no")
   })
 
+  it("declining the directory force never reads as a job that ended out of sight", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    // The server ends the job on this "no" and its dismissal can reach the
+    // store before the answer request returns.
+    jobAnswer.mockImplementation(async () => {
+      act(() => applyJob({ ...parked("remove_directory"), dismissed: true }))
+      return job()
+    })
+    act(() => applyJob(parked("remove_directory")))
+    wrap(modal({ jobId: "j1", onClose }))
+    await user.click(await screen.findByRole("button", { name: /^cancel$/i }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.queryByText(/finished while this tab was away/i)).toBeNull()
+  })
+
   it("OK on success dismisses and reports deleted", async () => {
     const user = userEvent.setup()
     const onDeleted = vi.fn()

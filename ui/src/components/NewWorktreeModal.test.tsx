@@ -209,6 +209,24 @@ describe("NewWorktreeModal", () => {
     expect(jobAnswer).toHaveBeenCalledWith("j1", "no")
   })
 
+  it("declining the branch reuse never reads as a job that ended out of sight", async () => {
+    const parkedJob = job({
+      state: "needs_answer",
+      question: { key: "reuse_branch", branch: "review/pr-1" },
+    })
+    // The server ends the job on this "no" and its dismissal can reach the
+    // store before the answer request returns.
+    jobAnswer.mockImplementation(async () => {
+      act(() => applyJob({ ...parkedJob, dismissed: true }))
+      return parkedJob
+    })
+    act(() => applyJob(parkedJob))
+    const { onClose } = renderModal({ jobId: "j1" })
+    await userEvent.click(await screen.findByRole("button", { name: /^cancel$/i }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.queryByText(/finished while this tab was away/i)).toBeNull()
+  })
+
   it("reset to PR: Keep current commit answers no and stays open", async () => {
     act(() => applyJob(job({
       state: "needs_answer",

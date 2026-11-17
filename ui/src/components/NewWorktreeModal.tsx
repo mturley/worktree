@@ -46,7 +46,7 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, initialJob, onCl
   const [wsGroup, setWsGroup] = useState<string | null>(null)
   const [wsColor, setWsColor] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
-  const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
+  const { jobId, job, gone, unknown, busy, error, setError, track, act, endJob, dismissFinished } =
     useModalJob(opened, initialJobId, undefined, initialJob)
   // Once a job exists the form is moot: the work carries on server-side.
   useUnsavedChanges(
@@ -140,9 +140,12 @@ export function NewWorktreeModal({ opened, jobId: initialJobId, initialJob, onCl
   // the modal closes. Declining the PR reset keeps the current commit and the
   // job carries on to completion, so the modal stays to show that.
   const decline = async () => {
-    const reuse = job?.question?.key === "reuse_branch"
-    if (!(await act((id) => api.jobAnswer(id, "no")))) return
-    if (reuse) onClose()
+    const answer = (id: string) => api.jobAnswer(id, "no")
+    if (job?.question?.key !== "reuse_branch") {
+      await act(answer)
+      return
+    }
+    if (await endJob(answer)) onClose()
   }
 
   // A job that ended out of sight is over, whatever its last state said.

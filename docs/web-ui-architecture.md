@@ -2889,7 +2889,10 @@ states. Frontend:
   no spinner on any of them (`JobStepper`'s `quiet`), says "This finished while
   this tab was away." and offers Close. `sawLive` is what distinguishes that
   from the gap between the start response and the first stream event, where
-  there is legitimately no job in the store yet.
+  there is legitimately no job in the store yet. A "no" that ends the job
+  (declining the branch reuse or the directory force) goes through `endJob`
+  rather than `act`: the server dismisses the job on that answer, so it
+  leaving the store is expected and never reads as `gone`.
 - **Lib** (`ui/src/lib/`): `resourceSummary.ts` (builds the "2 PRs, 3 Jira
   issues · 2 related resources" summary string from `primary_by_type` +
   `related_count`), `worktreeSort.ts` + `worktreeSortPref.ts` (see "Worktree

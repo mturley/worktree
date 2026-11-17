@@ -47,9 +47,9 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   const [typed, setTyped] = useState("")
   const [deleteBranch, setDeleteBranch] = useState(false)
   const [starting, setStarting] = useState(false)
-  const { jobId, job, gone, unknown, busy, error, setError, track, act, dismissFinished } =
+  const { jobId, job, gone, unknown, busy, error, setError, track, act, endJob, dismissFinished } =
     useModalJob(opened, initialJobId, path, initialJob)
-  // A running delete no longer blocks leaving: it carries on server-side.
+  // A running delete does not block leaving: it carries on server-side.
   useUnsavedChanges(opened && typed !== "" && !jobId)
 
   // Reset to a fresh confirmation form whenever the modal is (re)opened, or
@@ -93,8 +93,12 @@ export function DeleteWorktreeModal({ opened, path, name, branch, jobId: initial
   // nothing has been deleted yet. Declining the branch force makes it finish
   // the cleanup with the branch kept, so the modal stays to show that.
   const decline = async () => {
-    if (!(await act((id) => api.jobAnswer(id, "no")))) return
-    if (job?.question?.key === "remove_directory") onClose()
+    const answer = (id: string) => api.jobAnswer(id, "no")
+    if (job?.question?.key !== "remove_directory") {
+      await act(answer)
+      return
+    }
+    if (await endJob(answer)) onClose()
   }
 
   const title = job ? job.title : name ? `Delete worktree ${name}` : "Delete worktree"
