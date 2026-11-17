@@ -52,13 +52,13 @@ describe("useReviewComments", () => {
     expect(apiMock.reviewComments).toHaveBeenCalledWith("/w", view)
   })
 
-  it("refetches on a 5s interval", async () => {
+  it("refetches on a 30s interval", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     apiMock.reviewComments.mockResolvedValue({ comments: [] })
     const { result } = renderHook(() => useReviewComments("/w", undefined), { wrapper: wrapper() })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     const n = apiMock.reviewComments.mock.calls.length
-    await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_100) })
     expect(apiMock.reviewComments.mock.calls.length).toBeGreaterThan(n)
   })
 

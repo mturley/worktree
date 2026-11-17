@@ -7,7 +7,7 @@ import { applyClose, applyMove } from "../lib/cmuxMove"
 export const cmuxTreeKey = (path: string) => ["cmux-tree", path] as const
 
 /**
- * One worktree's cmux workspaces with their panes and tabs. Polled every 5s,
+ * One worktree's cmux workspaces with their panes and tabs. Polled every 15s,
  * but only while something mounts it (the cmux card tab), only while the page
  * is visible, and not while a drag-move is settling (`paused`).
  */
@@ -15,7 +15,7 @@ export function useCmuxTree(path: string, paused: boolean) {
   return useQuery({
     queryKey: cmuxTreeKey(path),
     queryFn: () => api.cmuxTree(path),
-    refetchInterval: paused ? false : 5_000,
+    refetchInterval: paused ? false : 15_000,
     refetchIntervalInBackground: false,
     // A focus/reconnect refetch during the settle window would race the
     // move's own refetch and could snap the tab back before cmux has caught

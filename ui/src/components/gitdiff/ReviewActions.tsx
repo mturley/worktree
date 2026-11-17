@@ -12,10 +12,13 @@ import { OpenInEditorButton } from "../OpenInEditorButton"
  * How often the counts refresh while the Code tab isn't showing. The buttons
  * sit above the tab bar on every tab, but the counts only need to be live
  * where the changes are being looked at; elsewhere a slow refresh is enough.
- * (A diff view open on the same worktree keeps its own 5s poll: react-query
+ * (A diff view open on the same worktree keeps its own 15s poll: react-query
  * polls a shared query at its fastest observer's interval.)
  */
 const IDLE_POLL_MS = 60_000
+
+/** How often the counts refresh while the Code tab IS showing. */
+const ACTIVE_POLL_MS = 15_000
 
 /**
  * "Open in editor · Review changes", above the worktree details card's tabs.
@@ -34,7 +37,7 @@ export function ReviewActions({ path, git, active }: {
   // The same shared base as the Code tab's Files changed, so both agree on whether there is a diff.
   const { base } = useDiffSelection(path, undefined)
   const unavailable = diffUnavailable(git, base)
-  const pollMs = active ? undefined : IDLE_POLL_MS
+  const pollMs = active ? ACTIVE_POLL_MS : IDLE_POLL_MS
   // With no view, the worktree's whole list: every comment not yet cleared.
   const pending = useReviewComments(path, undefined, { pollMs }).data?.length ?? 0
   const prSummary = usePRCommentsSummary(path, { pollMs }).data

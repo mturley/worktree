@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, HttpError } from "../api/client"
 import type { NewReviewComment, ReviewComment, ReviewCommentItem } from "../api/types"
 
-const POLL_MS = 5000
+const POLL_MS = 30_000
 
 /**
  * The path's review comments, positioned for the view (when one is given).
- * `pollMs` slows this observer's poll (default 5s).
+ * `pollMs` overrides this observer's poll interval (default 30s).
  */
 export function useReviewComments(
   path: string,

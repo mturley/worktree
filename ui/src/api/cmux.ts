@@ -14,7 +14,7 @@ export function useCmux() {
   return useQuery({
     queryKey: ["cmux"],
     queryFn: () => api.cmux(),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   })
 }
 
@@ -47,7 +47,7 @@ export function useResourceCmuxTab(path: string | undefined, type: string, url: 
     queryKey: cmuxBrowserTabsKey,
     queryFn: () => api.cmuxBrowserTabs(),
     enabled: key !== null,
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   })
   const cmux = useCmux()

@@ -1,69 +1,119 @@
-import { describe, expect, it, vi } from "vitest"
-import { renderHook, waitFor } from "@testing-library/react"
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { render, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import type { ReactNode } from "react"
+
+const apiMock = vi.hoisted(() => ({
+  worktreeGit: vi.fn(async (_path: string, _fetch: boolean) => ({
+    status: "clean",
+    branch: "main",
+    tracking: null,
+    main_upstream_ref: null,
+    base_remote: null,
+    pr_id: null,
+    head_sha: "abc",
+    merge_base_sha: null,
+    vs_merge_base: null,
+    vs_tracking: null,
+    working: null,
+    fingerprint: "F1",
+    working_fingerprint: "W1",
+  })),
+}))
+vi.mock("../api/client", () => ({ api: apiMock }))
+
 import { useWorktreeGit } from "./useWorktreeGit"
-import type { WorktreeGit } from "../api/types"
 
-const worktreeGit = vi.fn()
-vi.mock("../api/client", () => ({ api: { worktreeGit: (...a: unknown[]) => worktreeGit(...a) } }))
-
-const git = { on_disk: true, branch: "b" } as WorktreeGit
+function Probe({ path, fetch }: { path: string; fetch: boolean }) {
+  useWorktreeGit(path, { fetch })
+  return null
+}
 
 describe("useWorktreeGit", () => {
-  it("keeps the previous data while the fetch flag flips, so the badge does not blink", async () => {
-    let release!: () => void
-    worktreeGit.mockResolvedValueOnce(git)
-    worktreeGit.mockImplementationOnce(() => new Promise((r) => { release = () => r(git) }))
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    )
-    const { result, rerender } = renderHook(({ fetch }) => useWorktreeGit("/wt/a", { fetch }), {
-      wrapper,
-      initialProps: { fetch: false },
+  beforeEach(() => {
+    apiMock.worktreeGit.mockClear()
+  })
+
+  it("shares one request between fetch and non-fetch observers", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    function Harness() {
+      return (
+        <QueryClientProvider client={client}>
+          <Probe path="/wt" fetch={false} />
+          <Probe path="/wt" fetch={true} />
+        </QueryClientProvider>
+      )
+    }
+
+    render(<Harness />)
+
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenCalled())
+    expect(apiMock.worktreeGit).toHaveBeenCalledTimes(1)
+    expect(apiMock.worktreeGit).toHaveBeenCalledWith("/wt", true)
+  })
+
+  it("asks without fetch when no observer wants it", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    function Harness() {
+      return (
+        <QueryClientProvider client={client}>
+          <Probe path="/wt" fetch={false} />
+        </QueryClientProvider>
+      )
+    }
+
+    render(<Harness />)
+
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenCalled())
+    expect(apiMock.worktreeGit).toHaveBeenCalledWith("/wt", false)
+  })
+
+  it("refetches with fetch as soon as a fetch observer mounts", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    function Harness({ mountFetch }: { mountFetch: boolean }) {
+      return (
+        <QueryClientProvider client={client}>
+          <Probe path="/wt" fetch={false} />
+          {mountFetch && <Probe path="/wt" fetch={true} />}
+        </QueryClientProvider>
+      )
+    }
+
+    const { rerender } = render(<Harness mountFetch={false} />)
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenCalledTimes(1))
+    expect(apiMock.worktreeGit).toHaveBeenCalledWith("/wt", false)
+
+    rerender(<Harness mountFetch={true} />)
+
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenCalledTimes(2))
+    expect(apiMock.worktreeGit).toHaveBeenLastCalledWith("/wt", true)
+  })
+
+  it("stops asking for fetch after the fetch observer unmounts", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    function Harness({ mountFetch }: { mountFetch: boolean }) {
+      return (
+        <QueryClientProvider client={client}>
+          <Probe path="/wt" fetch={false} />
+          {mountFetch && <Probe path="/wt" fetch={true} />}
+        </QueryClientProvider>
+      )
+    }
+
+    const { rerender } = render(<Harness mountFetch={true} />)
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenCalledTimes(1))
+    expect(apiMock.worktreeGit).toHaveBeenCalledWith("/wt", true)
+
+    rerender(<Harness mountFetch={false} />)
+
+    await waitFor(() => {
+      expect(client.getQueryCache().find({ queryKey: ["worktree-git", "/wt"] })).toBeTruthy()
     })
-    await waitFor(() => expect(result.current.data).toBe(git))
+    await client.refetchQueries({ queryKey: ["worktree-git", "/wt"] })
 
-    rerender({ fetch: true })
-    // The new query is still loading, yet the old data stays on screen.
-    expect(worktreeGit).toHaveBeenLastCalledWith("/wt/a", true)
-    expect(result.current.data).toBe(git)
-    release()
-  })
-
-  it("shows the other variant's cached data when mounted fresh, as when the card moves off the Code tab", async () => {
-    let release!: () => void
-    worktreeGit.mockReset()
-    worktreeGit.mockResolvedValueOnce(git)
-    worktreeGit.mockImplementationOnce(() => new Promise((r) => { release = () => r(git) }))
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    )
-    const first = renderHook(() => useWorktreeGit("/wt/a", { fetch: true }), { wrapper })
-    await waitFor(() => expect(first.result.current.data).toBe(git))
-    first.unmount()
-
-    const { result } = renderHook(() => useWorktreeGit("/wt/a", { fetch: false }), { wrapper })
-    expect(worktreeGit).toHaveBeenLastCalledWith("/wt/a", false)
-    expect(result.current.data).toBe(git)
-    release()
-  })
-
-  it("never shows another worktree's cached status", async () => {
-    worktreeGit.mockReset()
-    worktreeGit.mockResolvedValueOnce(git)
-    worktreeGit.mockImplementationOnce(() => new Promise(() => {}))
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    )
-    const first = renderHook(() => useWorktreeGit("/wt/a", { fetch: true }), { wrapper })
-    await waitFor(() => expect(first.result.current.data).toBe(git))
-    first.unmount()
-
-    const { result } = renderHook(() => useWorktreeGit("/wt/b", { fetch: false }), { wrapper })
-    expect(result.current.data).toBeUndefined()
+    await waitFor(() => expect(apiMock.worktreeGit).toHaveBeenLastCalledWith("/wt", false))
   })
 })
