@@ -162,6 +162,8 @@ func runUI(cmd *cobra.Command, args []string) error {
 	// config itself, so this is only the starting state.
 	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
 	srv.SetPortScanDisabled(cfg.UI.PortScanDisabled)
+	// ui.listeners_scan_interval (default/floor via config.UIConfig.ListenersInterval).
+	srv.SetListenersInterval(cfg.UI.ListenersInterval())
 	// The Notifications tab's switch and custom command; Settings moves
 	// them live.
 	srv.SetNotifications(cfg.Notifications)
@@ -188,7 +190,7 @@ func runUI(cmd *cobra.Command, args []string) error {
 
 	// The 📬 prefix on cmux workspace titles whose worktree has unreads
 	// (internal/webui/cmux_unread.go).
-	stopUnreadSync := srv.StartCmuxUnreadSync(5 * time.Second)
+	stopUnreadSync := srv.StartCmuxUnreadSync(cfg.UI.UnreadSyncInterval())
 	defer stopUnreadSync()
 
 	// Tells "Follow cmux focus" tabs which worktree cmux switched to
