@@ -6,7 +6,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 )
+
+// spawns counts git processes started by gitRaw, process-wide. Exported via
+// SpawnCount for tests to assert deltas against.
+var spawns atomic.Int64
+
+// SpawnCount returns the number of git processes gitRaw has started so far.
+func SpawnCount() int64 {
+	return spawns.Load()
+}
 
 // git runs `git -C dir args...` and returns trimmed stdout. On failure the
 // error carries stderr, which is where git explains itself.
@@ -37,6 +47,7 @@ func gitRaw(dir string, env []string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	spawns.Add(1)
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -157,5 +158,26 @@ func TestPermissionsTooOpen(t *testing.T) {
 	got, err := PermissionsTooOpen(filepath.Join(dir, "missing"))
 	if err != nil || got {
 		t.Errorf("missing file: got %v, %v; want false, nil", got, err)
+	}
+}
+
+func TestUIConfigIntervals(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  time.Duration
+	}{
+		{"", 30 * time.Second},
+		{"bogus", 30 * time.Second},
+		{"1s", 5 * time.Second},
+		{"45s", 45 * time.Second},
+	} {
+		u := UIConfig{CmuxUnreadSyncInterval: tc.value}
+		if got := u.UnreadSyncInterval(); got != tc.want {
+			t.Errorf("UnreadSyncInterval(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+		u = UIConfig{ListenersScanInterval: tc.value}
+		if got := u.ListenersInterval(); got != tc.want {
+			t.Errorf("ListenersInterval(%q) = %v, want %v", tc.value, got, tc.want)
+		}
 	}
 }

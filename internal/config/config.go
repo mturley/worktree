@@ -179,13 +179,53 @@ type UIConfig struct {
 	// SetCmuxFeaturesDisabled; absent means enabled.
 	CmuxFeaturesDisabled bool `yaml:"cmux_features_disabled,omitempty"`
 	// PortScanDisabled turns off the scan for the TCP ports each worktree's
-	// processes listen on (lsof, every 10s while the UI is open). Set from the
+	// processes listen on (lsof, every 30s while the UI is open). Set from the
 	// Settings modal; absent means enabled.
 	PortScanDisabled bool `yaml:"port_scan_disabled,omitempty"`
 	// RemoteAccessDisabled keeps `worktree ui` from serving HTTPS even
 	// when a certificate is configured, without discarding it. Set from the
 	// Settings modal or `worktree setup`; absent means enabled.
 	RemoteAccessDisabled bool `yaml:"remote_access_disabled,omitempty"`
+	// CmuxUnreadSyncInterval is how often the 📬 prefix on cmux workspace
+	// titles is refreshed (Go duration). Empty or unparsable means
+	// defaultServerLoopInterval (30s); anything under minServerLoopInterval
+	// (5s) is raised to it. Config-file only: not in the Settings modal.
+	CmuxUnreadSyncInterval string `yaml:"cmux_unread_sync_interval,omitempty"`
+	// ListenersScanInterval is how often the listening-ports scanner runs
+	// while a tab wants it (Go duration). Same default/floor as
+	// CmuxUnreadSyncInterval. Config-file only: not in the Settings modal.
+	ListenersScanInterval string `yaml:"listeners_scan_interval,omitempty"`
+}
+
+// defaultServerLoopInterval and minServerLoopInterval are the default and
+// floor for the configurable server loop intervals (cmux unread sync,
+// listeners scan) below.
+const (
+	defaultServerLoopInterval = 30 * time.Second
+	minServerLoopInterval     = 5 * time.Second
+)
+
+// UnreadSyncInterval is how often the cmux unread-title sync runs, with the
+// default and floor applied. Follows the GitConfig.Interval() pattern.
+func (u UIConfig) UnreadSyncInterval() time.Duration {
+	return serverLoopInterval(u.CmuxUnreadSyncInterval)
+}
+
+// ListenersInterval is how often the listening-ports scanner runs, with the
+// default and floor applied. Follows the GitConfig.Interval() pattern.
+func (u UIConfig) ListenersInterval() time.Duration {
+	return serverLoopInterval(u.ListenersScanInterval)
+}
+
+func serverLoopInterval(value string) time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil {
+		return defaultServerLoopInterval
+	}
+	if d < minServerLoopInterval {
+		return minServerLoopInterval
+	}
+	return d
 }
 
 type UITLSConfig struct {

@@ -15,8 +15,9 @@ import (
 )
 
 // listenersIntervalDefault is how often the scanner runs while a stream
-// that consumes listeners is open.
-const listenersIntervalDefault = 10 * time.Second
+// that consumes listeners is open, unless ui.listeners_scan_interval
+// overrides it (see config.UIConfig.ListenersInterval).
+const listenersIntervalDefault = 30 * time.Second
 
 // listenersScanTimeoutDefault bounds a single scan.
 const listenersScanTimeoutDefault = 30 * time.Second
@@ -64,6 +65,14 @@ func (s *Server) listenersHub() *listenersHub {
 // does not rescan by itself; a live change also calls listenersHub().kick().
 func (s *Server) SetPortScanDisabled(disabled bool) {
 	s.portScanDisabled.Store(disabled)
+}
+
+// SetListenersInterval overrides how often the listeners scanner runs
+// (ui.listeners_scan_interval); zero leaves listenersIntervalDefault in
+// effect. Call before the server starts serving — listenersInterval is
+// read without synchronization once the scan loop is running.
+func (s *Server) SetListenersInterval(interval time.Duration) {
+	s.listenersInterval = interval
 }
 
 // subscribe registers a stream. The channel holds the current snapshot

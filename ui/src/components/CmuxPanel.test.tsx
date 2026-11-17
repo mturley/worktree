@@ -179,7 +179,7 @@ describe("CmuxPanel", () => {
         fireEvent.mouseUp(document, { button: 0, clientX: 10, clientY: 30 })
         await vi.advanceTimersByTimeAsync(0)
       })
-      await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
       expect(getTree).toHaveBeenCalled()
     } finally {
       // Not vi.runAllTimers()/runAllTimersAsync(): the poll's own

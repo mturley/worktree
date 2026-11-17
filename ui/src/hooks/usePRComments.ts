@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "../api/client"
 import type { PRCommentsSummary, PRThreads } from "../api/types"
 
-const POLL_MS = 5000
+const POLL_MS = 30_000
 
 /**
  * Counts and unread state for the worktree's PR; polled so unread updates
- * live. `pollMs` slows this observer's poll (default 5s).
+ * live. `pollMs` overrides this observer's poll interval (default 30s).
  */
 export function usePRCommentsSummary(path: string, opts: { pollMs?: number } = {}) {
   return useQuery<PRCommentsSummary>({

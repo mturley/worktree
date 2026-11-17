@@ -27,18 +27,27 @@ type prHeadState struct {
 // cached state alone: it never contacts GitHub, so it is not gated on the
 // GitHub watcher.
 func (s *Server) worktreePR(dir string) (prcomments.Candidate, bool) {
-	tracked, err := resources.Load(s.DB, dir)
-	if err != nil {
-		return prcomments.Candidate{}, false
-	}
-	prs := resources.OfType(tracked, "pr")
-	if len(prs) == 0 {
+	cands := s.worktreePRCandidates(dir)
+	if len(cands) == 0 {
 		return prcomments.Candidate{}, false
 	}
 	remote, merge, ok := gitutil.BranchUpstream(dir)
 	if !ok {
 		return prcomments.Candidate{}, false
 	}
+	return prcomments.PickPR(cands, prcomments.Upstream{Slug: gitutil.RemoteSlug(dir, remote), Merge: merge})
+}
+
+// worktreePRCandidates is the database half of worktreePR: the followed PRs
+// of dir with their cached head/base state. It starts no process, so the
+// worktree-git cache can key on it per request; the git half (the branch's
+// configured upstream and that remote's URL) is covered by the refs stamp.
+func (s *Server) worktreePRCandidates(dir string) []prcomments.Candidate {
+	tracked, err := resources.Load(s.DB, dir)
+	if err != nil {
+		return nil
+	}
+	prs := resources.OfType(tracked, "pr")
 	var cands []prcomments.Candidate
 	for _, r := range prs {
 		ref, err := wgithub.ParsePRResourceID(r.ID)
@@ -65,5 +74,5 @@ func (s *Server) worktreePR(dir string) (prcomments.Candidate, bool) {
 		}
 		cands = append(cands, c)
 	}
-	return prcomments.PickPR(cands, prcomments.Upstream{Slug: gitutil.RemoteSlug(dir, remote), Merge: merge})
+	return cands
 }
