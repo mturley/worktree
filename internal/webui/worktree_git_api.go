@@ -9,7 +9,6 @@ import (
 
 	"github.com/mturley/worktree/internal/config"
 	"github.com/mturley/worktree/internal/gitfetch"
-	"github.com/mturley/worktree/internal/gitutil"
 )
 
 type aheadBehindDTO struct {
@@ -81,39 +80,10 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	}
 	fetcher := s.fetchScheduler(config.GitConfig{FetchInterval: e.FetchInterval}.Interval())
 
-	out := worktreeGitDTO{OnDisk: true, Directory: directory}
-	if b, ok := gitutil.CurrentBranch(path); ok {
-		out.Branch = b
-	}
-
-	var refs []string
-	up, pr, ok, baseRemote := s.mergeBaseRefFetch(path)
-	if pr != nil {
-		id := pr.ID
-		out.PR = &id
-	}
-	if ok {
-		out.MainUpstream = &up
-		refs = append(refs, up)
-		if mb, ok := gitutil.MergeBase(path, up); ok {
-			out.MergeBase = &mb
-		}
-		if a, b, ok := gitutil.AheadBehind(path, up); ok {
-			out.VsMergeBase = &aheadBehindDTO{Ahead: a, Behind: b}
-		}
-	}
-	if tr, ok := gitutil.TrackingBranch(path); ok {
-		out.Tracking = &tr
-		refs = append(refs, tr)
-		if a, b, ok := gitutil.AheadBehind(path, tr); ok {
-			out.VsTracking = &aheadBehindDTO{Ahead: a, Behind: b}
-		}
-	}
-	// One status pass yields both the counts and the fingerprints.
-	if ws, fp, err := gitutil.WorkingState(path, refs...); err == nil {
-		out.Working = workingDTO{Staged: ws.Staged, Modified: ws.Modified, Untracked: ws.Untracked, Files: ws.Files}
-		out.Fingerprint, out.WorkingFingerprint = fp.Full, fp.Working
-	}
+	c := s.cachedWorktreeGit(path)
+	out := c.dto
+	out.OnDisk, out.Directory = true, directory
+	refs, baseRemote := c.refs, c.baseRemote
 
 	if r.URL.Query().Get("fetch") == "1" && e.BackgroundFetch {
 		remotes := gitfetch.RemotesFor(path, refs...)

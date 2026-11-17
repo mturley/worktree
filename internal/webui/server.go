@@ -48,6 +48,11 @@ type Server struct {
 	revs   *revSet
 	revsMu sync.Mutex
 
+	// gitCache caches /api/worktree-git per worktree path. Created on
+	// first use (see worktreeGitCache).
+	gitCache   *worktreeGitCache
+	gitCacheMu sync.Mutex
+
 	// review resolves review comment positions and caches their inputs.
 	// Created on first use (see reviewResolver).
 	review   *reviewResolver
