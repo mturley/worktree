@@ -249,3 +249,22 @@ func TestWorktreeGit_OffDiskBypassesCache(t *testing.T) {
 		t.Fatalf("expected off disk: %+v", b)
 	}
 }
+
+func TestWorktreeGitCache_PanicReleasesPath(t *testing.T) {
+	wt := forkRepo(t)
+	c := newWorktreeGitCache()
+	func() {
+		defer func() { _ = recover() }()
+		c.get(wt, "", func() gitComputed { panic("boom") }, nil)
+	}()
+	done := make(chan gitComputed, 1)
+	go func() { done <- c.get(wt, "", func() gitComputed { return gitComputed{baseRemote: "ok"} }, nil) }()
+	select {
+	case v := <-done:
+		if v.baseRemote != "ok" {
+			t.Fatalf("got %+v", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("get blocked after a panicking compute")
+	}
+}

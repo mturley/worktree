@@ -73,12 +73,15 @@ func (c *worktreeGitCache) get(path, prKey string, compute func() gitComputed, r
 	prev := c.entries[path]
 	c.mu.Unlock()
 
+	// Deferred so a panicking compute still releases waiters (they get the
+	// zero value, which renders as an empty status) and later calls.
+	defer func() {
+		c.mu.Lock()
+		delete(c.inflight, path)
+		c.mu.Unlock()
+		close(call.done)
+	}()
 	call.val = c.load(path, prKey, prev, compute, refresh)
-
-	c.mu.Lock()
-	delete(c.inflight, path)
-	c.mu.Unlock()
-	close(call.done)
 	return call.val
 }
 
