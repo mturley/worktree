@@ -11,24 +11,54 @@ import (
 	"testing"
 )
 
-// TestWorkingStateWith_NeedsContext documents the blocked state: as the
-// brief specifies it, WorkingStateWith(dir, bs, refSHAs) is given only the
-// branch/upstream/ahead-behind header facts (BranchStatus), never the
-// per-path status entries a StatusV2 call also produces. Building
-// WorkingSummary/the working fingerprint requires those entries (XY + path
-// per changed/untracked file) plus an Lstat per entry — there is no way to
-// derive them from BranchStatus and refSHAs alone without running `git
-// status` again, which would defeat the "ref tier valid => 1 git process"
-// budget this function exists to meet. See the NEEDS_CONTEXT note on
-// WorkingStateWith in statusv2.go and task-3-report.md.
-func TestWorkingStateWith_NeedsContext(t *testing.T) {
-	before := SpawnCount()
-	_, _, err := WorkingStateWith("", BranchStatus{HeadSHA: "abc"}, map[string]string{"main": "abc"})
-	if delta := SpawnCount() - before; delta != 0 {
-		t.Errorf("SpawnCount delta = %d, want 0 (no git process should start)", delta)
+// TestFullFingerprint_MatchesWorkingState asserts the pure composer produces
+// exactly what WorkingState computed before this refactor: HEAD's SHA, the
+// given ref's resolved SHA, and the working digest, hashed in that order.
+func TestFullFingerprint_MatchesWorkingState(t *testing.T) {
+	repo, _ := newRemoteRepo(t)
+
+	_, fp, err := WorkingState(repo, "origin/main")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err == nil {
-		t.Fatal("expected error: signature lacks the status entries needed to build WorkingSummary/Fingerprint")
+
+	bs, _, statusFP, err := StatusV2(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refSHA, _ := RevSHA(repo, "origin/main")
+	want := FullFingerprint(bs.HeadSHA, []string{"origin/main"}, map[string]string{"origin/main": refSHA}, statusFP.Working)
+
+	if fp.Full != want {
+		t.Errorf("WorkingState Full = %q, want %q (from FullFingerprint)", fp.Full, want)
+	}
+}
+
+// TestFullFingerprint_SpawnFree asserts FullFingerprint starts no git
+// process: it is a pure function of its arguments.
+func TestFullFingerprint_SpawnFree(t *testing.T) {
+	before := SpawnCount()
+	_ = FullFingerprint("abc", []string{"origin/main", "upstream/main"}, map[string]string{"origin/main": "def"}, "working-digest")
+	if delta := SpawnCount() - before; delta != 0 {
+		t.Errorf("SpawnCount delta = %d, want 0", delta)
+	}
+}
+
+// TestFullFingerprint_RefOrderAndMissing asserts ref order is part of the
+// hash (so a cache must preserve it) and that a ref absent from refSHAs
+// hashes identically to one explicitly mapped to "".
+func TestFullFingerprint_RefOrderAndMissing(t *testing.T) {
+	shas := map[string]string{"a": "sha-a", "b": "sha-b"}
+	ab := FullFingerprint("head", []string{"a", "b"}, shas, "w")
+	ba := FullFingerprint("head", []string{"b", "a"}, shas, "w")
+	if ab == ba {
+		t.Error("FullFingerprint did not change when ref order changed")
+	}
+
+	missing := FullFingerprint("head", []string{"gone"}, map[string]string{}, "w")
+	explicitEmpty := FullFingerprint("head", []string{"gone"}, map[string]string{"gone": ""}, "w")
+	if missing != explicitEmpty {
+		t.Errorf("FullFingerprint(%q missing) = %q, want %q (same as explicit empty SHA)", "gone", missing, explicitEmpty)
 	}
 }
 

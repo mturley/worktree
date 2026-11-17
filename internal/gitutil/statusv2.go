@@ -157,27 +157,3 @@ func workingFingerprint(dir string, entries []statusEntry) Fingerprint {
 	}
 	return Fingerprint{Working: hex.EncodeToString(h.Sum(nil))}
 }
-
-// WorkingStateWith builds the working-tree counts and fingerprint from a
-// BranchStatus already computed (e.g. by StatusV2) plus the ref SHAs the
-// caller needs for the Full fingerprint, without starting any git process of
-// its own. It exists for Task 4's cache: when the ref tier is still valid,
-// the cache has bs and every needed ref SHA already, so a request only pays
-// for the one StatusV2 call that revalidated the working tier.
-//
-// NEEDS_CONTEXT: as specified, this signature omits the status entries
-// (statusEntry list / WorkingSummary) that StatusV2 produced. Computing the
-// working-tree counts and the working-fingerprint hash requires that entry
-// list (XY + path per changed/untracked file) and an Lstat per entry;
-// BranchStatus carries only branch/upstream/ahead-behind header facts, not
-// per-path status lines. Rather than guess a replacement (e.g. silently
-// re-running `git status` here, which would defeat the "ref tier valid => 1
-// git process" budget this function exists to meet, or fabricating zero
-// values), WorkingStateWith is left unimplemented below and returns an error
-// saying so. Resolving this needs either: (a) a third parameter carrying the
-// entries/WorkingSummary from the same StatusV2 call that produced bs, or
-// (b) folding entries into BranchStatus itself. See task-3-report.md.
-func WorkingStateWith(dir string, bs BranchStatus, refSHAs map[string]string) (WorkingSummary, Fingerprint, error) {
-	return WorkingSummary{}, Fingerprint{}, fmt.Errorf(
-		"gitutil: WorkingStateWith not implemented — signature lacks the status entries needed to build WorkingSummary/Fingerprint without a git call; see NEEDS_CONTEXT note in statusv2.go")
-}

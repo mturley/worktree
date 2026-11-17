@@ -23,6 +23,23 @@ func ComputeFingerprint(dir string, refs ...string) (Fingerprint, error) {
 	return fp, err
 }
 
+// FullFingerprint is the pure composer behind the Full fingerprint: it hashes
+// HEAD, then each of refs (in the given order) with its resolved SHA from
+// refSHAs (a ref missing from the map hashes the same as one mapped to ""),
+// then the working digest, exactly as WorkingState has always hashed them.
+// It starts no process, so a caller holding a BranchStatus/ref-SHA map and a
+// working digest already in hand (e.g. from a cache whose ref tier is still
+// valid) can rebuild Full without any git call of its own.
+func FullFingerprint(headSHA string, refs []string, refSHAs map[string]string, working string) string {
+	full := sha256.New()
+	fmt.Fprintf(full, "HEAD %s\x00", headSHA)
+	for _, ref := range refs {
+		fmt.Fprintf(full, "%s %s\x00", ref, refSHAs[ref])
+	}
+	io.WriteString(full, working)
+	return hex.EncodeToString(full.Sum(nil))
+}
+
 // WorkingState derives both the Code tab's working-tree counts and the
 // fingerprint from ONE `git status` plus one Lstat per changed file — no
 // per-file git calls — because it runs every few seconds on large repos.
@@ -41,12 +58,11 @@ func WorkingState(dir string, refs ...string) (WorkingSummary, Fingerprint, erro
 		return WorkingSummary{}, Fingerprint{}, err
 	}
 
-	full := sha256.New()
-	fmt.Fprintf(full, "HEAD %s\x00", bs.HeadSHA)
+	refSHAs := make(map[string]string, len(refs))
 	for _, ref := range refs {
 		sha, _ := RevSHA(dir, ref)
-		fmt.Fprintf(full, "%s %s\x00", ref, sha)
+		refSHAs[ref] = sha
 	}
-	io.WriteString(full, fp.Working)
-	return ws, Fingerprint{Full: hex.EncodeToString(full.Sum(nil)), Working: fp.Working}, nil
+	full := FullFingerprint(bs.HeadSHA, refs, refSHAs, fp.Working)
+	return ws, Fingerprint{Full: full, Working: fp.Working}, nil
 }
