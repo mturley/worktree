@@ -42,4 +42,12 @@ var settingsKeyPaths = map[string][]string{
 }
 
 // settingsKeyExclusions are keys the modal deliberately never shows.
-var settingsKeyExclusions = map[string]map[string]bool{}
+var settingsKeyExclusions = map[string]map[string]bool{
+	"worktree": {
+		// Advanced server loop tuning (cmux unread sync, listeners scan);
+		// config-file only, not worth a Settings modal control for two
+		// duration fields (YAGNI; see task-6-brief.md).
+		"ui.cmux_unread_sync_interval": true,
+		"ui.listeners_scan_interval":   true,
+	},
+}
