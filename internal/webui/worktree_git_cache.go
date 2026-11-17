@@ -120,6 +120,22 @@ func (c *worktreeGitCache) store(path string, e *gitCacheEntry) {
 	c.entries[path] = e
 }
 
+// expireWorking marks path's working tier stale, so the next get refreshes
+// it (one status via the ref-tier path) even though the index stamp has not
+// moved. Called after the diff endpoint computed a fresher working
+// fingerprint, which would otherwise disagree with the cached one for up to
+// workingTTL.
+func (c *worktreeGitCache) expireWorking(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.entries[path]; ok {
+		e.workingAt = time.Time{}
+	}
+}
+
+// forget drops path's entry (the worktree is gone from disk).
+func (c *worktreeGitCache) forget(path string) { c.store(path, nil) }
+
 // worktreeGitCache returns the server's cache, creating it on first use.
 func (s *Server) worktreeGitCache() *worktreeGitCache {
 	s.gitCacheMu.Lock()

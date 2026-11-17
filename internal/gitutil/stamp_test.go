@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -223,5 +224,27 @@ func TestStateStamp_StageChangesIndexOnly(t *testing.T) {
 	}
 	if s1.Refs != s2.Refs {
 		t.Errorf("Refs changed after git add (index-only op): %s != %s", s1.Refs, s2.Refs)
+	}
+}
+
+func TestStateStamp_ReftableChangesOnCommit(t *testing.T) {
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init", "--ref-format=reftable", "-b", "main", repo)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git does not support reftable: %v\n%s", err, out)
+	}
+	commitFile(t, repo, "a", "1")
+	s1, err := StateStamp(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, "b", "2")
+	s2, err := StateStamp(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s1.Refs == s2.Refs {
+		t.Errorf("Refs unchanged after commit in reftable repo: %s", s1.Refs)
 	}
 }

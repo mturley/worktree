@@ -226,6 +226,10 @@ func (s *Server) handleDiffFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// The client re-polls status once the patch loads; expire the cached
+	// working tier so that poll reports this fresher working fingerprint
+	// rather than a cached one (unstaged edits leave the index stamp alone).
+	s.worktreeGitCache().expireWorking(t.dir)
 	oldRev, newRev, id, ok := s.resolveDiff(w, r, t)
 	if !ok {
 		return
@@ -255,6 +259,10 @@ func (s *Server) handleDiffPatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// The client re-polls status once the patch loads; expire the cached
+	// working tier so that poll reports this fresher working fingerprint
+	// rather than a cached one (unstaged edits leave the index stamp alone).
+	s.worktreeGitCache().expireWorking(t.dir)
 	oldRev, newRev, id, ok := s.resolveDiff(w, r, t)
 	if !ok {
 		return

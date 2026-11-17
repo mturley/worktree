@@ -91,6 +91,14 @@ func StateStamp(worktree string) (Stamp, error) {
 		addEntry(h, path)
 		return nil
 	})
+	// The reftable backend keeps all refs under reftable/ instead.
+	_ = filepath.WalkDir(filepath.Join(commonDir, "reftable"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		addEntry(h, path)
+		return nil
+	})
 	refs := hex.EncodeToString(h.Sum(nil))
 
 	hi := sha256.New()

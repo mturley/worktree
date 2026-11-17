@@ -161,8 +161,10 @@ export default function DiffView({
   // Set when a load was asked for because the comment list's revs expired:
   // that load's revs are fresh, so the list is asked again at once.
   const refetchCommentsOnLoad = useRef(false)
-  // The status poll may be up to 5s older than the patch; without catching it
-  // up, its older working fingerprint would flash Refresh after every load.
+  // The status poll may predate the patch; without catching it up, its older
+  // working fingerprint would flash Refresh after every load. The server
+  // expires its cached working tier when serving a patch, so this refetch
+  // returns the patch's working fingerprint.
   useEffect(() => {
     if (!shown) return
     void qc.invalidateQueries({ queryKey: ["worktree-git", path] })

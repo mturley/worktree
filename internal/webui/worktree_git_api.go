@@ -67,6 +67,7 @@ func (s *Server) handleWorktreeGit(w http.ResponseWriter, r *http.Request) {
 	home, _ := os.UserHomeDir()
 	directory := tildify(path, home)
 	if st, err := os.Stat(path); err != nil || !st.IsDir() {
+		s.worktreeGitCache().forget(path)
 		writeJSON(w, http.StatusOK, worktreeGitDTO{Directory: directory})
 		return
 	}

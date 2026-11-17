@@ -88,6 +88,11 @@ func TestParseStatusV2(t *testing.T) {
 			out:  "# branch.oid abc123\x00# branch.head main\x00",
 			want: BranchStatus{HeadSHA: "abc123", Branch: "main", Upstream: "", HasAB: false},
 		},
+		{
+			name: "upstream gone (no branch.ab)",
+			out:  "# branch.oid abc123\x00# branch.head main\x00# branch.upstream origin/main\x00",
+			want: BranchStatus{HeadSHA: "abc123", Branch: "main", Upstream: "origin/main", HasAB: false},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,4 +272,24 @@ func legacyWorkingState(dir string) (WorkingSummary, WorkingSummary, Fingerprint
 		fmt.Fprintf(h, "%d %d\x00", info.Size(), info.ModTime().UnixNano())
 	}
 	return ws, ws, Fingerprint{Working: hex.EncodeToString(h.Sum(nil))}, nil
+}
+
+func TestParseStatusV2Entries(t *testing.T) {
+	tests := []struct {
+		name, out, xy, path string
+	}{
+		{"unmerged", "u UU N... 100644 100644 100644 100644 h1 h2 h3 conflict.txt\x00", "UU", "conflict.txt"},
+		{"path with spaces", "1 .M N... 100644 100644 100644 h h dir/a file with spaces.txt\x00", " M", "dir/a file with spaces.txt"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ws, entries := parseStatusV2(tc.out)
+			if len(entries) != 1 || entries[0].XY != tc.xy || entries[0].Path != tc.path {
+				t.Fatalf("entries = %+v, want [{%q %q}]", entries, tc.xy, tc.path)
+			}
+			if ws.Files != 1 {
+				t.Errorf("Files = %d, want 1", ws.Files)
+			}
+		})
+	}
 }

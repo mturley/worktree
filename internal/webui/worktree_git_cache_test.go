@@ -268,3 +268,42 @@ func TestWorktreeGitCache_PanicReleasesPath(t *testing.T) {
 		t.Fatal("get blocked after a panicking compute")
 	}
 }
+
+func TestWorktreeGit_PatchExpiresWorkingTier(t *testing.T) {
+	wt := forkRepo(t)
+	srv, ts := gitTestServer(t, wt, nil)
+	fakeClock(srv) // clock frozen: only expiry can refresh the working tier
+	_, a := getWorktreeGit(t, ts, wt, "")
+	if err := os.WriteFile(filepath.Join(wt, "f1"), []byte("edited for patch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := getPatch(t, ts, wt, "")
+	if p.WorkingFingerprint == a.WorkingFingerprint {
+		t.Fatal("patch fingerprint did not move")
+	}
+	before := gitutil.SpawnCount()
+	_, b := getWorktreeGit(t, ts, wt, "")
+	if b.WorkingFingerprint != p.WorkingFingerprint {
+		t.Fatalf("status working_fingerprint %s, patch %s", b.WorkingFingerprint, p.WorkingFingerprint)
+	}
+	if d := gitutil.SpawnCount() - before; d != 1 {
+		t.Fatalf("refresh spawned %d git processes, want 1", d)
+	}
+}
+
+func TestWorktreeGit_OffDiskDropsCacheEntry(t *testing.T) {
+	wt := forkRepo(t)
+	srv, ts := gitTestServer(t, wt, nil)
+	getWorktreeGit(t, ts, wt, "")
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	getWorktreeGit(t, ts, wt, "")
+	c := srv.worktreeGitCache()
+	c.mu.Lock()
+	_, ok := c.entries[wt]
+	c.mu.Unlock()
+	if ok {
+		t.Fatal("cache entry kept for off-disk worktree")
+	}
+}
