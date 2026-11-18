@@ -18,7 +18,7 @@ func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{DB: conn, cmuxList: func() ([]cmux.Workspace, error) {
+	s := &Server{DB: conn, cmuxAvailable: func() bool { return true }, cmuxList: func() ([]cmux.Workspace, error) {
 		return []cmux.Workspace{
 			{ID: "W1", CurrentDirectory: wt},
 			{ID: "W2", CurrentDirectory: t.TempDir()},
