@@ -8,19 +8,11 @@ afterEach(() => vi.restoreAllMocks())
 describe("bannerDismiss", () => {
   it("starts undismissed", () => {
     expect(isBannerDismissed("home")).toBe(false)
-    expect(isBannerDismissed("all")).toBe(false)
   })
 
   it("remembers a dismissal", () => {
     dismissBanner("home")
     expect(isBannerDismissed("home")).toBe(true)
-  })
-
-  it("keeps the two banners independent", () => {
-    // They are mutually exclusive on any one route, but a tab can outlive the
-    // condition that chose between them — a dismissal must not carry over.
-    dismissBanner("home")
-    expect(isBannerDismissed("all")).toBe(false)
   })
 
   it("re-renders subscribers when a banner is dismissed", () => {
@@ -31,8 +23,8 @@ describe("bannerDismiss", () => {
   })
 
   it("stores in sessionStorage, so a new tab starts over", () => {
-    dismissBanner("all")
-    expect(Object.keys(window.sessionStorage).some((k) => k.includes("all"))).toBe(true)
+    dismissBanner("home")
+    expect(Object.keys(window.sessionStorage).some((k) => k.includes("home"))).toBe(true)
   })
 
   it("treats a throwing sessionStorage as undismissed rather than blowing up", () => {

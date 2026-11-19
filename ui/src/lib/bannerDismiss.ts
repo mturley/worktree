@@ -17,8 +17,8 @@
  */
 import { useSyncExternalStore } from "react"
 
-/** Which banner. They are mutually exclusive on any given route. */
-export type BannerVariant = "home" | "all"
+/** Which banner. Only the home banner today; the key keeps room for more. */
+export type BannerVariant = "home"
 
 function key(variant: BannerVariant): string {
   return `worktree.banner.dismissed.${variant}`

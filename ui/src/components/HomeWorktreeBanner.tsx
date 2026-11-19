@@ -3,34 +3,26 @@ import { Button, Group } from "@mantine/core"
 import { IconArrowLeft } from "@tabler/icons-react"
 import { useLocation } from "wouter"
 import { KeyHint } from "./search/KeyHint"
-import { useCmux } from "../api/cmux"
-import { dismissBanner, useBannerDismissed, type BannerVariant } from "../lib/bannerDismiss"
+import { dismissBanner, useBannerDismissed } from "../lib/bannerDismiss"
 import { useEscLeaves, usePublishBannerShown } from "../lib/escapeHint"
 import { WorktreeGlyph } from "./WorktreeGlyph"
 import {
   getHomeWorktree,
   homeWorktreeHref,
-  shouldShowAllWorktreesBanner,
   shouldShowHomeBanner,
   worktreeName,
 } from "../lib/homeWorktree"
 
 /**
- * The way back to wherever this tab came from.
+ * The way back to the worktree this tab was opened for.
  *
- * Two variants, never both at once:
+ * A cmux workspace pins this UI as a pane belonging to one worktree, and
+ * `worktree ui` run from inside a worktree opens the same thing. Both mark
+ * the tab with `?home=`, and both are easy to navigate away from, with
+ * nothing on the far page remembering where you started.
  *
- *   home — a cmux workspace pins this UI as a pane belonging to one worktree,
- *     and `worktree ui` run from inside a worktree opens the same thing. Both
- *     mark the tab with `?home=`, and both are easy to navigate away from,
- *     with nothing on the far page remembering where you started.
- *
- *   all — no `?home=`, but the UI is running under cmux and the selected
- *     workspace belongs to no worktree: an overview workspace. "Where I came
- *     from" is then the listing, not any one worktree.
- *
- * Renders nothing in a tab opened by hand in a plain browser, which is most of
- * them, and nothing on the page it points at.
+ * Renders nothing in a tab nobody homed, which is most of them, and nothing
+ * on the home worktree's own page.
  *
  * It IS dismissible, per tab. An earlier version was not, on the reasoning
  * that a navigation aid which can be hidden is missing exactly when it is
@@ -40,47 +32,27 @@ import {
  */
 export function HomeWorktreeBanner() {
   const [location, navigate] = useLocation()
-  const cmux = useCmux()
-  // Shared with the pages: a dismissed home banner also drops Esc's step
-  // home (see useEscHome). The local copy hides it even when sessionStorage
-  // is blocked and the shared one cannot remember.
-  const [hidden, setHidden] = useState<Partial<Record<BannerVariant, true>>>({})
-  const dismissed = {
-    home: useBannerDismissed("home") || Boolean(hidden.home),
-    all: useBannerDismissed("all") || Boolean(hidden.all),
-  }
-  const dismiss = (variant: BannerVariant) => () => {
-    setHidden((h) => ({ ...h, [variant]: true }))
-    dismissBanner(variant)
-  }
+  // Shared with the pages: a dismissed banner also drops Esc's step home
+  // (see useEscHome). The local copy hides it even when sessionStorage is
+  // blocked and the shared one cannot remember.
+  const [hidden, setHidden] = useState(false)
+  const dismissed = useBannerDismissed("home") || hidden
 
   const home = getHomeWorktree()
-  const variant: BannerVariant | null =
-    home && shouldShowHomeBanner(home, location) ? "home"
-      : shouldShowAllWorktreesBanner(home, location, cmux.data) ? "all"
-        : null
-  const shown = variant !== null && !dismissed[variant]
+  const shown = home !== null && shouldShowHomeBanner(home, location) && !dismissed
   usePublishBannerShown(shown)
-  // Esc goes where this banner does whenever the page says Esc leaves: the
-  // home worktree from any other, the listing from an overview workspace.
+  // Esc goes where this banner does whenever the page says Esc leaves.
   const escLeaves = useEscLeaves()
 
   if (!shown) return null
-  if (variant === "home" && home) {
-    return (
-      <NavBanner
-        label={<>Back to current worktree: <WorktreeGlyph /><span>{worktreeName(home)}</span></>}
-        onBack={() => navigate(homeWorktreeHref(home))}
-        onDismiss={dismiss("home")}
-        escHint={escLeaves}
-      />
-    )
-  }
   return (
     <NavBanner
-      label="Back to all worktrees"
-      onBack={() => navigate("/")}
-      onDismiss={dismiss("all")}
+      label={<>Back to current worktree: <WorktreeGlyph /><span>{worktreeName(home)}</span></>}
+      onBack={() => navigate(homeWorktreeHref(home))}
+      onDismiss={() => {
+        setHidden(true)
+        dismissBanner("home")
+      }}
       escHint={escLeaves}
     />
   )
