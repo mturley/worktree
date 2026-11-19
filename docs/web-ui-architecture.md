@@ -2699,6 +2699,11 @@ single in-process loop for as long as the server is up:
   notifier reads `ts` near its cursor. Unread needs nothing extra: Slack
   events compare their `external_ts` against the mirrored `last_read` (see
   "Unread"), so a backfilled reply is unread exactly when Slack says so.
+- **Slack event bodies hold the whole message**: a `slack_reply` body is
+  `Author: ` plus the full text (mentions resolved, line breaks kept), and
+  `watch_started`'s body is the full root, so search matches any of it.
+  Titles and the cached thread title stay at the 60-rune preview. The
+  activity row clamps the body to two lines; notifications truncate it.
 
 ## Watcher log
 

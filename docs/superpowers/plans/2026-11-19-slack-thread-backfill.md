@@ -91,3 +91,17 @@ git commit --signoff -m "feat: backfill Slack thread history when following a th
 - [ ] **Step 2:** Write an untracked `hack/slack-backfill-catchup/main.go` in this checkout (inside the module so `internal/slackcreds` imports): open the DB via `internal/db`, build the client with `slackcreds.Client()`, select distinct `resource_id` from `watcher_subscriptions` where `resource_type='slack' AND subscriber LIKE 'worktree:%' AND deleted_at IS NULL`, call `slack.BackfillThread` for each, print id + count + errors.
 - [ ] **Step 3:** Run `go run ./hack/slack-backfill-catchup`; verify with `sqlite3` that each thread's `slack_reply` count now matches its reply count (≤200) and that no `(resource, external_ts)` pair is duplicated. Spot-check search in the UI for a pre-follow message.
 - [ ] **Step 4:** `rm -r hack/slack-backfill-catchup`.
+
+### Task 4: Library — Slack events carry the full message text (added 2026-11-19 at Mike's request; runs before Task 3)
+
+Approved in conversation: reply bodies become `Author: <full text>` (mentions resolved, newlines kept), `watch_started` body becomes the full resolved root text, titles and the cached thread title stay 60-rune. `BackfillThread` also rewrites a recorded reply's body when it differs (catches existing truncated bodies and edits). Event-details mrkdwn rendering is out of scope (revisit after the catch-up).
+
+**Files:** Modify `~/git/watcher/slack/poller.go`, `~/git/watcher/db/dedup.go` (add `UpdateEventBody`); Test `slack/poller_test.go`, `db/dedup_test.go`.
+
+**Interfaces:** Produces `func UpdateEventBody(conn *sql.DB, d DedupCheck, body string) (bool, error)` — sets `body` on every event matching `d` (same match as `IsDuplicate`) whose body differs; reports whether any row changed. `BackfillThread`'s count becomes emitted + updated.
+
+- [ ] **Step 1: Failing tests:** `TestPoll_ReplyBodyIsFullText` (a 200-rune multi-line reply → body `Bob: ` + the exact text); `TestPoll_WatchStartedBodyIsFullRoot`; `TestBackfillThread_RewritesTruncatedBody` (seed a reply event with a truncated body, `BackfillThread` returns 1 and the body becomes full; second call returns 0); `TestUpdateEventBody` in db.
+- [ ] **Step 2: Run** `go test ./slack/ ./db/` → FAIL.
+- [ ] **Step 3: Implement.** A `replyBody(author, text)` helper; `emitReplies` in send-time (backfill) mode calls `UpdateEventBody` for a duplicate.
+- [ ] **Step 4: Run** `go test ./...` in watcher → PASS. Commit, tag `v0.29.0` (ask Mike before pushing).
+- [ ] **Step 5:** worktree: re-pin `v0.29.0`, update the "Polling model" doc paragraph (bodies hold the full text), `make test`, commit.
