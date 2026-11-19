@@ -20,6 +20,7 @@ import { OpenInFullUiButton } from "./OpenInFullUiButton"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { isGitHubMarkdownBody } from "../lib/githubBody"
+import { Mrkdwn } from "../lib/mrkdwn"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, markUnreadBlockedReason, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
@@ -380,7 +381,11 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
             ) : e.body && (
               // Preserve the author's line breaks; this is comment text, not prose.
               <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {e.body}
+                {e.source === "slack" ? (
+                  <Mrkdwn text={slackMessageText(e.body, e.author)} users={NO_USERS} emoji={NO_EMOJI} />
+                ) : (
+                  e.body
+                )}
               </Text>
             )}
 
@@ -447,4 +452,17 @@ function eventResource(
     : undefined
   if (!known) return { type: e.resource_type, id: e.resource_id, url: e.resource_url, primary: false } as ResourceDTO
   return known.url ? known : { ...known, url: e.resource_url }
+}
+
+// A Slack event's body is Slack mrkdwn whose mentions the poller already
+// resolved to names, so no user directory is needed; custom emoji have no map
+// here and fall back to their :shortcode: (as in LinkedResourceRow).
+const NO_USERS = {}
+const NO_EMOJI = {}
+
+/** A Slack event body without its leading "Author: ", which the modal's
+ * header already shows. */
+function slackMessageText(body: string, author: string | undefined): string {
+  const prefix = author ? `${author}: ` : ""
+  return prefix && body.startsWith(prefix) ? body.slice(prefix.length) : body
 }
