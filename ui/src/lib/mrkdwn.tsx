@@ -92,6 +92,21 @@ function renderRunEmoji(
 // positions that start with `:`.
 const EMOJI_TOKEN = /:[a-zA-Z0-9_+-]+:/
 
+// A ``` fence (may span lines) or a one-line `code` span.
+const CODE = /(```[\s\S]*?```|`[^`\n]+`)/
+
+// An emphasis span as Slack styles one: its delimiters sit at word
+// boundaries (so max_tokens, a*b*c and @mike_t stay literal) and it never
+// crosses a line. Emoji tokens ride along so an emoji name's underscores
+// (":white_check_mark:") are never read as an _italic_ span.
+const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])'
+const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])'
+const span = (d: string) => {
+  const e = d === '*' ? '\\*' : d // in /u mode only * may (and must) be escaped
+  return `${NOT_WORD_BEFORE}${e}[^${d}\\n]+${e}${NOT_WORD_AFTER}`
+}
+const EMPHASIS = new RegExp(`(${span('*')}|${span('_')}|${span('~')}|${EMOJI_TOKEN.source})`, 'u')
+
 /** Renders a run with emphasis as the OUTER split: code spans and single-level
  * `*bold*`/`_italic_`/`~strike~` segments are pulled out first, and each
  * segment's inner content is recursed through `renderInline` so a mention,
@@ -104,32 +119,43 @@ function renderStyledText(
   users: Record<string, User>,
   emoji: Record<string, string>,
 ): React.ReactNode {
-  // Split on code spans first — their contents must stay literal.
-  const codeSplit = text.split(/(`[^`]+`)/)
+  // Split on code first — fences and spans keep their contents literal.
+  // split() with a capturing group puts the captures at the odd indices, so
+  // a piece is code because the split CAPTURED it, never merely because it
+  // happens to begin and end with a backtick.
+  const codeSplit = text.split(CODE)
   return codeSplit.map((chunk, ci) => {
     const codeKey = `${keyPrefix}-c-${ci}`
-    if (chunk.startsWith('`') && chunk.endsWith('`') && chunk.length >= 2) {
+    if (ci % 2 === 1) {
+      if (chunk.startsWith('```')) {
+        // Slack drops the line breaks that hug a fence's delimiters.
+        const body = chunk.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '')
+        return (
+          <code key={codeKey} style={{ display: 'block', whiteSpace: 'pre-wrap' }}>
+            {unescapeSlackText(body)}
+          </code>
+        )
+      }
       return <code key={codeKey}>{unescapeSlackText(chunk.slice(1, -1))}</code>
     }
-    // Then split on emphasis + standalone emoji tokens.
-    const pattern = new RegExp(`(\\*[^*]+\\*|_[^_]+_|~[^~]+~|${EMOJI_TOKEN.source})`)
-    const parts = chunk.split(pattern)
+    // Then split on emphasis + standalone emoji tokens (captures again at
+    // the odd indices).
+    const parts = chunk.split(EMPHASIS)
     return (
       <Fragment key={codeKey}>
         {parts.map((part, i) => {
           const key = `${codeKey}-e-${i}`
-          if (part.length >= 2) {
-            if (part.startsWith('*') && part.endsWith('*')) {
-              return <strong key={key}>{renderInline(part.slice(1, -1), users, emoji, key)}</strong>
-            }
-            if (part.startsWith('_') && part.endsWith('_')) {
-              return <em key={key}>{renderInline(part.slice(1, -1), users, emoji, key)}</em>
-            }
-            if (part.startsWith('~') && part.endsWith('~')) {
-              return <del key={key}>{renderInline(part.slice(1, -1), users, emoji, key)}</del>
-            }
-            if (new RegExp(`^${EMOJI_TOKEN.source}$`).exec(part)) {
-              return renderEmojiNode(part.slice(1, -1), undefined, emoji, key)
+          if (i % 2 === 1) {
+            const inner = part.slice(1, -1)
+            switch (part[0]) {
+              case '*':
+                return <strong key={key}>{renderInline(inner, users, emoji, key)}</strong>
+              case '_':
+                return <em key={key}>{renderInline(inner, users, emoji, key)}</em>
+              case '~':
+                return <del key={key}>{renderInline(inner, users, emoji, key)}</del>
+              default:
+                return renderEmojiNode(inner, undefined, emoji, key)
             }
           }
           // Non-emphasis run: resolve angle tokens + emoji via the shared leaf.
