@@ -381,7 +381,7 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
             ) : e.body && (
               // Preserve the author's line breaks; this is comment text, not prose.
               <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {e.source === "slack" ? (
+                {e.source === "slack" && SLACK_MESSAGE_TYPES.includes(e.type) ? (
                   <Mrkdwn text={slackMessageText(e.body, e.author)} users={NO_USERS} emoji={NO_EMOJI} />
                 ) : (
                   e.body
@@ -458,6 +458,9 @@ function eventResource(
 // resolved to names, so no user directory is needed; custom emoji have no map
 // here and fall back to their :shortcode: (as in LinkedResourceRow).
 const NO_USERS = {}
+// Only these carry message text; a Slack watcher_error's body is an error
+// string, where mrkdwn would italicise codes like missing_scope.
+const SLACK_MESSAGE_TYPES = ["slack_reply", "watch_started"]
 const NO_EMOJI = {}
 
 /** A Slack event body without its leading "Author: ", which the modal's

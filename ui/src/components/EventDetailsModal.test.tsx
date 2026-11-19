@@ -105,6 +105,20 @@ describe("EventDetailsModal", () => {
     expect(screen.getByRole("dialog").querySelector("em")?.textContent).toBe("today")
   })
 
+  it("leaves a Slack watcher error's body as plain text", () => {
+    wrap(<EventDetailsModal e={ev({ source: "slack", type: "watcher_error", author: "",
+      body: "slack error: missing_scope and not_allowed_token_type", resource_type: "slack", resource_id: "C1:1.2" })} onClose={vi.fn()} />)
+    const dialog = screen.getByRole("dialog")
+    expect(dialog.querySelector("em")).toBeNull()
+    expect(dialog.textContent).toContain("missing_scope and not_allowed_token_type")
+  })
+
+  it("leaves a non-Slack watch_started body alone", () => {
+    wrap(<EventDetailsModal e={ev({ source: "jira", type: "watch_started", author: "", body: "a *jira* summary",
+      resource_type: "jira", resource_id: "K-1" })} onClose={vi.fn()} />)
+    expect(screen.getByRole("dialog").querySelector("strong")).toBeNull()
+  })
+
   it("leaves a non-Slack body's markup alone", () => {
     wrap(<EventDetailsModal e={ev({ source: "jira", type: "jira_comment", author: "Bob", body: "Bob: *not bold*",
       resource_type: "jira", resource_id: "K-1" })} onClose={vi.fn()} />)
