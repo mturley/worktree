@@ -597,6 +597,16 @@ Notes:
   directly with a plain `<img src>` (no proxy), hidden on error.
 - An attachment whose blocks are all `"unsupported"` renders nothing (the
   empty-card guard treats "no renderable block" the same as "no content").
+- A `section`'s `accessory` is not always an image. App messages (alerts,
+  bots) put an interactive element there, such as a button, and its `text` is
+  a **text object**, not a string:
+  `"accessory": {"type": "button", "text": {"type": "plain_text", "text": "View"}, "url": "…"}`.
+  Image accessories and `context` elements carry `text` as a plain string.
+  The watcher library's `rawBlockElement` accepts both (a button's label
+  becomes its `Text`); decoding the object as a string used to fail the
+  whole `conversations.replies` response, so one such message made its
+  entire thread unpollable. Only image accessories are rendered. Fixture:
+  `watcher/slack/testdata/attachment_button_accessory.json`.
 
 ## `users.info` — resolve authors & mentions
 
