@@ -5,7 +5,8 @@ import { useCmuxTwoWaySync } from "../hooks/useCmuxTwoWaySync"
 import { Toggle } from "./Toggle"
 
 /**
- * Tells a worktree page that it is following cmux, with the way out, and the
+ * Tells the page (a worktree's, or the home page, where two-way sync keeps
+ * following on) that this tab is following cmux, with the way out, and the
  * "Two-way sync" toggle (see CmuxFollower): with it on, opening a worktree
  * here switches cmux too, and the text says so.
  *

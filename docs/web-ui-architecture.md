@@ -4553,10 +4553,11 @@ A per-tab toggle on the home page's worktree toolbar (after Sort by) that
 makes the tab open whichever worktree cmux switches to. Rendered only when
 `/api/cmux` says `available`, i.e. the server runs inside cmux. Wide, a
 worktree page has the same toggle after its cmux button; narrow (phones) it
-is left out to save header space. Either way the page shows
-`FollowingCmuxBanner` at the top of its sticky header while following is on
-(whether or not cmux is still available, so it can always be turned off),
-with a "Stop following" button.
+is left out to save header space. While following is on, a worktree page
+shows `FollowingCmuxBanner` at the top of its sticky header, and the home page
+shows it above its header (two-way sync keeps following on there), whether or
+not cmux is still available, so it can always be turned off with its "Stop
+following" button.
 
 - **Source:** `StartCmuxFocusWatch` runs `cmux events --name
   workspace.selected --name window.focused --reconnect` for the server's

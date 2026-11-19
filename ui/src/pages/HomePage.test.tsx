@@ -37,6 +37,7 @@ vi.mock("../hooks/useTimeline", () => ({
 import { HomePage } from "./HomePage"
 import { api } from "../api/client"
 import { parseResourceKey } from "../lib/resourceKey"
+import { setFollowCmux } from "../hooks/useFollowCmux"
 
 const wrap = () => {
   const qc = new QueryClient()
@@ -96,6 +97,29 @@ describe("HomePage responsive layout", () => {
     wrap()
     expect(screen.getByText(/my-branch/)).toBeInTheDocument()
     expect(screen.getByText(/Fix the widget/)).toBeInTheDocument()
+  })
+})
+
+describe("HomePage following-cmux banner", () => {
+  afterEach(() => act(() => setFollowCmux(false)))
+
+  for (const viewport of ["wide", "narrow"] as const) {
+    it(`shows the banner above the header while following (${viewport})`, () => {
+      setViewport(viewport)
+      act(() => setFollowCmux(true))
+      wrap()
+      const banner = document.querySelector("[data-following-cmux-banner]")
+      expect(banner).toBeInTheDocument()
+      expect(within(banner as HTMLElement).getByRole("switch", { name: "Two-way sync" })).toBeInTheDocument()
+      const header = screen.getByTestId("home-header")
+      expect(banner!.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+  }
+
+  it("shows no banner while not following", () => {
+    setViewport("wide")
+    wrap()
+    expect(document.querySelector("[data-following-cmux-banner]")).toBeNull()
   })
 })
 

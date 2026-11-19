@@ -23,6 +23,7 @@ import { useSeeEverything } from "../hooks/useSeeEverything"
 import { NarrowingContext } from "../components/search/NarrowingContext"
 import { EMPTY_FILTER } from "../lib/resourceListFilter"
 import { HomeHeader } from "../components/HomeHeader"
+import { FollowingCmuxBanner } from "../components/FollowingCmuxBanner"
 import { SearchBar } from "../components/search/SearchBar"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
@@ -311,7 +312,16 @@ export function HomePage() {
       onEscapeIdle={home ? () => navigate(homeWorktreeHref(home)) : undefined}
     />
   )
-  const header = <HomeHeader search={searchBar} />
+  // The following banner heads the page too, not only worktree pages: with
+  // two-way sync on, coming here keeps following on, and the banner is the
+  // way to see that and to stop. Inside the measured header box when wide,
+  // so the columns size to what is left under it.
+  const header = (
+    <Stack gap="sm">
+      <FollowingCmuxBanner />
+      <HomeHeader search={searchBar} />
+    </Stack>
+  )
   const detailsModal = (
     <>
       {activity.modals}
