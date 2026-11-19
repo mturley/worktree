@@ -1,13 +1,14 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
+import { afterEach, beforeEach, describe, it, expect, vi, type MockInstance } from "vitest"
 import { act, render, cleanup, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MantineProvider } from "@mantine/core"
-import { CmuxFollower, worktreeAt } from "./CmuxFollower"
+import { CmuxFollower, TWO_WAY_GUARD_MS, worktreeAt } from "./CmuxFollower"
 import { FollowCmuxToggle } from "./FollowCmuxToggle"
 import { FollowingCmuxBanner } from "./FollowingCmuxBanner"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setFollowCmux, FOLLOW_CMUX_KEY } from "../hooks/useFollowCmux"
+import { setCmuxTwoWaySync } from "../hooks/useCmuxTwoWaySync"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { api } from "../api/client"
 import { navigate } from "wouter/use-browser-location"
@@ -40,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   act(() => setFollowCmux(false))
+  act(() => setCmuxTwoWaySync(false))
 })
 
 describe("worktreeAt", () => {
@@ -120,6 +122,139 @@ describe("CmuxFollower", () => {
     expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
     focus(B)
     expect(window.location.pathname).toBe(pageOf(A))
+  })
+})
+
+describe("CmuxFollower, two-way sync", () => {
+  const C = "/wt/repo/c"
+  const cmuxState = (bSelected = false) => ({
+    available: true,
+    matches: {
+      [A]: [{ ref: "workspace:1", title: "a", selected: !bSelected }],
+      [B]: [{ ref: "workspace:2", title: "b", selected: bSelected }],
+    },
+  })
+  const tick = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+  let cmux: MockInstance<typeof api.cmux>
+  let select: MockInstance<typeof api.cmuxSelect>
+
+  beforeEach(() => {
+    act(() => setFollowCmux(true))
+    act(() => setCmuxTwoWaySync(true))
+    cmux = vi.spyOn(api, "cmux").mockResolvedValue(cmuxState())
+    select = vi.spyOn(api, "cmuxSelect").mockResolvedValue({ ok: true })
+  })
+
+  it("switches cmux when the user opens another worktree", async () => {
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:2"))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+  })
+
+  it("switches cmux when going from the list to a worktree", async () => {
+    window.history.replaceState({}, "", "/")
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:2"))
+  })
+
+  it("keeps following and leaves cmux alone on the home page", async () => {
+    wrap(<CmuxFollower />)
+    act(() => navigate("/"))
+    await tick()
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("does not re-select a workspace cmux already has selected", async () => {
+    cmux.mockResolvedValue(cmuxState(true))
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await tick()
+    expect(cmux).toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("leaves cmux alone for a worktree with no workspace", async () => {
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(C)))
+    await tick()
+    expect(cmux).toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+  })
+
+  it("never echoes its own navigation back to cmux", async () => {
+    wrap(<CmuxFollower />)
+    focus(B)
+    expect(window.location.pathname).toBe(pageOf(B))
+    await tick()
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it("ignores a stale focus event for the worktree just left", async () => {
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalled())
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(B))
+  })
+
+  it("follows again once cmux confirms the switch", async () => {
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalled())
+    focus(B)
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(A))
+  })
+
+  it("follows again after the guard window", async () => {
+    let now = 1_000_000
+    vi.spyOn(Date, "now").mockImplementation(() => now)
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalled())
+    now += TWO_WAY_GUARD_MS + 1
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(A))
+  })
+
+  it("a failed switch clears the guard", async () => {
+    select.mockResolvedValue({ ok: false, error: "x" })
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalled())
+    await tick()
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(A))
+  })
+
+  it("a rejected switch clears the guard", async () => {
+    select.mockRejectedValue(new Error("down"))
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalled())
+    await tick()
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(A))
+  })
+
+  it("fetches cmux state when none is cached", async () => {
+    wrap(<CmuxFollower />)
+    expect(cmux).not.toHaveBeenCalled()
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:2"))
+    expect(cmux).toHaveBeenCalled()
+  })
+
+  it("does nothing while following is off", async () => {
+    act(() => setFollowCmux(false))
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await tick()
+    expect(select).not.toHaveBeenCalled()
   })
 })
 
