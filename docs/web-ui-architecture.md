@@ -4582,6 +4582,24 @@ with a "Stop following" button.
   workspace `cmux workspace list` reports as selected, resolved the same way)
   and hands it to `CmuxFollower` as an ordinary focus change, so the tab goes
   where cmux already is under the same rules.
+- **Two-way sync:** a "Two-way sync" toggle in `FollowingCmuxBanner`
+  (sessionStorage `worktree.cmuxTwoWaySync`, `hooks/useCmuxTwoWaySync.ts`;
+  per tab like following, and kept when following is turned off and on). With
+  it on, the banner reads "Synced with cmux: …", and the tab's own move to a
+  worktree page (any route, including from the home page) no longer turns
+  following off: `CmuxFollower` switches cmux to that worktree's workspace
+  through `POST /api/cmux/select`, reading the `["cmux"]` query
+  (`fetchQuery`, so a page that never loaded it still switches). It does
+  nothing when the worktree has no workspace or cmux already shows one of
+  them. A move off the worktree pages (the home page, to pick the next one)
+  keeps following and leaves cmux alone. After asking cmux to switch to P,
+  focus events for any other worktree are ignored until one for P arrives or
+  `TWO_WAY_GUARD_MS` (2000) passes, so cmux's late report of the workspace
+  just left cannot drag the tab back; a failed select drops the guard. The
+  guard goes up before the workspace lookup, selects run one at a time, and
+  each first checks the tab is still on its worktree, so a quick A → B → C
+  sends only C's. With it off, leaving a worktree page still turns following
+  off.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,
