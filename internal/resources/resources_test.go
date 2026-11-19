@@ -457,6 +457,31 @@ func TestAddDoesNotSeedACursorForSlack(t *testing.T) {
 	}
 }
 
+// Following a Slack thread backfills its earlier replies (so search finds
+// them); PRs and Jira issues keep the watch_started-only first poll.
+func TestAddRequestsBackfillOnlyForSlack(t *testing.T) {
+	conn := testDB(t)
+	wt := "/tmp/wt/backfill"
+	for _, r := range []Resource{
+		{Type: "slack", ID: "C1:1.2", URL: "u"},
+		{Type: "pr", ID: "o/r#1", URL: "http://x/1"},
+	} {
+		if err := Add(conn, wt, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for typ, want := range map[string]bool{"slack": true, "pr": false} {
+		id := map[string]string{"slack": "C1:1.2", "pr": "o/r#1"}[typ]
+		got, err := watcherdb.BackfillFor(conn, typ, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("BackfillFor(%s) = %v, want %v", typ, got, want)
+		}
+	}
+}
+
 // ids renders the loaded resources as "type:id" strings, in order, for
 // readable ordering assertions.
 func ids(rs []Resource) []string {
