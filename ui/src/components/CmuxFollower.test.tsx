@@ -249,6 +249,64 @@ describe("CmuxFollower, two-way sync", () => {
     expect(cmux).toHaveBeenCalled()
   })
 
+  /** A promise and its resolver, to hold a request open. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void
+    const promise = new Promise<T>((r) => { resolve = r })
+    return { promise, resolve }
+  }
+  const D = "/wt/repo/d"
+  const wide = {
+    available: true,
+    matches: {
+      [A]: [{ ref: "workspace:1", title: "a", selected: true }],
+      [B]: [{ ref: "workspace:2", title: "b", selected: false }],
+      [C]: [{ ref: "workspace:3", title: "c", selected: false }],
+      [D]: [{ ref: "workspace:4", title: "d", selected: false }],
+    },
+  }
+
+  it("guards against stale events while it is still looking up the workspace", async () => {
+    const lookup = deferred<typeof wide>()
+    cmux.mockReturnValue(lookup.promise)
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    focus(A)
+    expect(window.location.pathname).toBe(pageOf(B))
+    await act(async () => { lookup.resolve(wide) })
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:2"))
+  })
+
+  it("skips a switch for a worktree the user has already left", async () => {
+    const lookup = deferred<typeof wide>()
+    cmux.mockReturnValue(lookup.promise)
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    act(() => navigate(pageOf(C)))
+    await act(async () => { lookup.resolve(wide) })
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:3"))
+    expect(select).not.toHaveBeenCalledWith("workspace:2")
+  })
+
+  it("sends one switch at a time, and only the latest of those queued", async () => {
+    cmux.mockResolvedValue(wide)
+    const first = deferred<{ ok: boolean }>()
+    select.mockReturnValueOnce(first.promise)
+    wrap(<CmuxFollower />)
+    act(() => navigate(pageOf(B)))
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:2"))
+    act(() => navigate(pageOf(C)))
+    act(() => navigate(pageOf(D)))
+    await tick()
+    expect(select).toHaveBeenCalledTimes(1)
+    await act(async () => { first.resolve({ ok: true }) })
+    await waitFor(() => expect(select).toHaveBeenCalledWith("workspace:4"))
+    expect(select).not.toHaveBeenCalledWith("workspace:3")
+    // cmux's late report of B must not pull the tab back from D.
+    focus(B)
+    expect(window.location.pathname).toBe(pageOf(D))
+  })
+
   it("does nothing while following is off", async () => {
     act(() => setFollowCmux(false))
     wrap(<CmuxFollower />)

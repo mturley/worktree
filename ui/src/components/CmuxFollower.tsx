@@ -29,32 +29,51 @@ interface Guard {
  * Switches cmux to `path`'s workspace, unless it has none or cmux already
  * shows one of them. The cmux query is reused when fresh and fetched when
  * not, so a page that never loaded it still switches.
+ *
+ * The guard goes up at once, before the lookup: a stale focus event during
+ * that round trip would otherwise drag the tab back. Switches run one at a
+ * time through `queue`, and each first checks the tab is still on `path`, so
+ * a quick A → B → C sends only what is current when its turn comes and cmux
+ * cannot finish on a worktree the user has already left.
  */
-async function selectWorkspaceFor(
+function selectWorkspaceFor(
   qc: QueryClient,
   path: string,
   guard: { current: Guard | null },
+  queue: { current: Promise<void> },
 ): Promise<void> {
-  let matches
-  try {
-    const cmux = await qc.fetchQuery({ queryKey: ["cmux"], queryFn: () => api.cmux(), staleTime: 30_000 })
-    if (!cmux.available) return
-    matches = cmux.matches?.[path] ?? []
-  } catch {
-    return
-  }
-  if (matches.length === 0 || matches.some((ws) => ws.selected)) return
   const mine: Guard = { path, until: Date.now() + TWO_WAY_GUARD_MS }
   guard.current = mine
-  // Only clear the guard this call set: a newer navigation owns it otherwise.
+  // Only drop the guard this call set: a newer navigation owns it otherwise.
   const release = () => { if (guard.current === mine) guard.current = null }
-  try {
-    const res = await api.cmuxSelect(matches[0].ref)
-    if (!res.ok) release()
-    else void qc.invalidateQueries({ queryKey: ["cmux"] })
-  } catch {
-    release()
+
+  const run = async () => {
+    let matches
+    try {
+      const cmux = await qc.fetchQuery({ queryKey: ["cmux"], queryFn: () => api.cmux(), staleTime: 30_000 })
+      matches = cmux.available ? cmux.matches?.[path] ?? [] : []
+    } catch {
+      release()
+      return
+    }
+    const stillHere = worktreeAt(window.location.pathname) === path
+    if (!stillHere || matches.length === 0 || matches.some((ws) => ws.selected)) {
+      release()
+      return
+    }
+    // The window counts from the request, not from when it was queued.
+    mine.until = Date.now() + TWO_WAY_GUARD_MS
+    try {
+      const res = await api.cmuxSelect(matches[0].ref)
+      if (!res.ok) release()
+      else void qc.invalidateQueries({ queryKey: ["cmux"] })
+    } catch {
+      release()
+    }
   }
+  const next = queue.current.then(run)
+  queue.current = next
+  return next
 }
 
 /** The worktree path a location shows, or null off the worktree pages. */
@@ -89,6 +108,7 @@ export function CmuxFollower() {
   const [twoWay] = useCmuxTwoWaySync()
   const qc = useQueryClient()
   const guardRef = useRef<Guard | null>(null)
+  const queueRef = useRef<Promise<void>>(Promise.resolve())
   const [location, navigate] = useLocation()
   // The worktree a focus change wants to open while the unsaved-changes
   // prompt is up; the latest change wins.
@@ -144,7 +164,7 @@ export function CmuxFollower() {
     expectedRef.current = null
     if (!follow || (expected !== null && to === expected)) return
     if (twoWay) {
-      if (to !== null) void selectWorkspaceFor(qc, to, guardRef)
+      if (to !== null) void selectWorkspaceFor(qc, to, guardRef, queueRef)
       return
     }
     if (from !== null) setFollow(false)

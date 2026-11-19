@@ -4595,8 +4595,11 @@ with a "Stop following" button.
   keeps following and leaves cmux alone. After asking cmux to switch to P,
   focus events for any other worktree are ignored until one for P arrives or
   `TWO_WAY_GUARD_MS` (2000) passes, so cmux's late report of the workspace
-  just left cannot drag the tab back; a failed select drops the guard. With
-  it off, leaving a worktree page still turns following off.
+  just left cannot drag the tab back; a failed select drops the guard. The
+  guard goes up before the workspace lookup, selects run one at a time, and
+  each first checks the tab is still on its worktree, so a quick A → B → C
+  sends only C's. With it off, leaving a worktree page still turns following
+  off.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,
