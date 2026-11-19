@@ -127,8 +127,10 @@ func ReconcileHolds(conn *sql.DB) error {
 		}
 		// Not IfAbsent: a live row whose lease expired is not live here, and
 		// a plain Subscribe clears its expiry (TTL 0 never expires). On a
-		// live hold it only rewrites the URL.
-		if err := watcherdb.Subscribe(conn, h.sub, r, watcherdb.SubscribeOpts{}); err != nil {
+		// live hold it only rewrites the URL. A Slack thread backfills its
+		// earlier replies on its first poll, as resources.Add does.
+		opts := watcherdb.SubscribeOpts{Backfill: h.typ == "slack"}
+		if err := watcherdb.Subscribe(conn, h.sub, r, opts); err != nil {
 			return fmt.Errorf("reconcile holds: hold %s %s:%s: %w", h.sub, h.typ, h.id, err)
 		}
 	}

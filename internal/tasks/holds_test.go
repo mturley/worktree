@@ -79,6 +79,26 @@ func TestHoldLifecycle(t *testing.T) {
 	}
 }
 
+// A Slack thread first polled for a task's blocker backfills its earlier
+// replies, exactly as one a worktree follows does; PRs keep the
+// watch_started-only first poll.
+func TestHoldRequestsBackfillOnlyForSlack(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	mustAddBlocker(t, conn, tk.ID, resTarget("slack", "C1:1.2"))
+	mustAddBlocker(t, conn, tk.ID, resTarget("pr", "o/r#1"))
+	for typ, want := range map[string]bool{"slack": true, "pr": false} {
+		id := map[string]string{"slack": "C1:1.2", "pr": "o/r#1"}[typ]
+		got, err := watcherdb.BackfillFor(conn, typ, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("BackfillFor(%s) = %v, want %v", typ, got, want)
+		}
+	}
+}
+
 func TestHoldReleasedOnDelete(t *testing.T) {
 	conn := newDB(t)
 	tk := mustCreate(t, conn, "blocked")
