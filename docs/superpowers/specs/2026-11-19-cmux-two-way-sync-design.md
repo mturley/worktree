@@ -52,7 +52,7 @@ worktree's workspace, so the two stay in lockstep whichever side he drives.
 - **Bounce guard:** after asking cmux to select a workspace for path P, the
   follower ignores focus events for any other path until one for P arrives,
   or ~2 s pass, whichever is first. A failed select clears the guard.
-- **Banner text, two-way on:** "Syncing with cmux: switching workspaces
+- **Banner text, two-way on:** "Synced with cmux: switching workspaces
   there opens their worktrees here, and opening a worktree here switches
   cmux to it."
 - **Unsaved-changes prompt:** unchanged. "Stay and stop following" still

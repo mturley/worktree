@@ -8,7 +8,7 @@ import { FollowCmuxToggle } from "./FollowCmuxToggle"
 import { FollowingCmuxBanner } from "./FollowingCmuxBanner"
 import { emitCmuxFocus } from "../lib/cmuxFocusBus"
 import { setFollowCmux, FOLLOW_CMUX_KEY } from "../hooks/useFollowCmux"
-import { setCmuxTwoWaySync } from "../hooks/useCmuxTwoWaySync"
+import { isCmuxTwoWaySync, setCmuxTwoWaySync } from "../hooks/useCmuxTwoWaySync"
 import { useUnsavedChanges } from "../lib/unsavedChanges"
 import { api } from "../api/client"
 import { navigate } from "wouter/use-browser-location"
@@ -308,5 +308,31 @@ describe("FollowingCmuxBanner", () => {
     await userEvent.click(screen.getByRole("button", { name: /stop following/i }))
     expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
     expect(screen.queryByRole("button", { name: /stop following/i })).toBeNull()
+  })
+
+  it("offers two-way sync, off by default", () => {
+    act(() => setFollowCmux(true))
+    wrap(<FollowingCmuxBanner />)
+    expect(screen.getByRole("switch", { name: "Two-way sync" })).not.toBeChecked()
+    expect(screen.getByText(/^Following cmux:/)).toBeInTheDocument()
+  })
+
+  it("turning it on persists and changes the text", async () => {
+    act(() => setFollowCmux(true))
+    wrap(<FollowingCmuxBanner />)
+    await userEvent.click(screen.getByRole("switch", { name: "Two-way sync" }))
+    expect(window.sessionStorage.getItem("worktree.cmuxTwoWaySync")).toBe("true")
+    expect(screen.getByText(
+      /^Synced with cmux: switching workspaces there opens their worktrees here, and opening a worktree here switches cmux to it\.$/,
+    )).toBeInTheDocument()
+  })
+
+  it("stop following keeps the two-way choice", async () => {
+    act(() => setFollowCmux(true))
+    act(() => setCmuxTwoWaySync(true))
+    wrap(<FollowingCmuxBanner />)
+    await userEvent.click(screen.getByRole("button", { name: /stop following/i }))
+    expect(screen.queryByRole("switch", { name: "Two-way sync" })).toBeNull()
+    expect(isCmuxTwoWaySync()).toBe(true)
   })
 })
