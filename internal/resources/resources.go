@@ -161,7 +161,12 @@ func Add(conn *sql.DB, worktreePath string, r Resource) error {
 	if err := watcherdb.Reinstate(conn, sub, wr); err != nil {
 		return fmt.Errorf("reinstate: %w", err)
 	}
-	if err := watcherdb.Subscribe(conn, sub, wr, watcherdb.SubscribeOpts{}); err != nil {
+	// A Slack thread backfills its earlier replies on its first poll, so
+	// search finds messages sent before the follow. Unread needs no help:
+	// Slack's read state is mirrored from its last_read, which the
+	// backfilled replies' Slack ts compare against like any other.
+	opts := watcherdb.SubscribeOpts{Backfill: r.Type == "slack"}
+	if err := watcherdb.Subscribe(conn, sub, wr, opts); err != nil {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 

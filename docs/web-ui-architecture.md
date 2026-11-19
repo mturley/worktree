@@ -2689,6 +2689,21 @@ single in-process loop for as long as the server is up:
   separate from worktree's own live-tab `internal/slackpoller`, an in-memory
   SSE poller that only runs while a Slack thread is open in the UI; `pollAll`
   keeps Slack threads current even when no tab is open, same as PRs/Jira.
+- **Slack backfill on follow**: `resources.Add` subscribes Slack threads
+  with `SubscribeOpts{Backfill: true}` (PRs and Jira issues without). A
+  thread's first poll then records `watch_started` stamped at follow time
+  plus a `slack_reply` for every earlier reply (up to the 200 messages
+  `conversations.replies` returns), each stamped with its **send time**, so
+  search finds pre-follow messages and history sits at the right point in
+  the timeline. Later replies are stamped with the wall clock, because the
+  notifier reads `ts` near its cursor. Unread needs nothing extra: Slack
+  events compare their `external_ts` against the mirrored `last_read` (see
+  "Unread"), so a backfilled reply is unread exactly when Slack says so.
+- **Slack event bodies hold the whole message**: a `slack_reply` body is
+  `Author: ` plus the full text (mentions resolved, line breaks kept), and
+  `watch_started`'s body is the full root, so search matches any of it.
+  Titles and the cached thread title stay at the 60-rune preview. The
+  activity row clamps the body to two lines; notifications truncate it.
 
 ## Watcher log
 
