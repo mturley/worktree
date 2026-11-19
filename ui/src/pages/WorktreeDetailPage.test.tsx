@@ -128,6 +128,25 @@ describe("WorktreeDetailPage header", () => {
   })
 
   for (const viewport of ["wide", "narrow"] as const) {
+    it(`${viewport === "wide" ? "puts" : "leaves out"} the Follow cmux toggle after the switch button (${viewport})`, async () => {
+      vi.spyOn(api, "cmux").mockResolvedValue({
+        available: true,
+        matches: { "/wt/foo": [{ ref: "workspace:1", title: "My workspace", color: "#AD1457", selected: false }] },
+      })
+      setViewport(viewport)
+      wrap()
+      const switchButton = await screen.findByRole("button", { name: /switch cmux/i })
+      if (viewport === "wide") {
+        const toggle = await screen.findByRole("switch", { name: "Follow cmux" })
+        expect(switchButton.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      } else {
+        expect(screen.queryByRole("switch", { name: "Follow cmux" })).not.toBeInTheDocument()
+      }
+      vi.restoreAllMocks()
+    })
+  }
+
+  for (const viewport of ["wide", "narrow"] as const) {
     it(`puts refresh, logs and settings in the header's title row (${viewport})`, async () => {
       setViewport(viewport)
       wrap()

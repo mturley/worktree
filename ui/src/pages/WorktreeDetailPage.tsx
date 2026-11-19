@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { api } from "../api/client"
 import { NotifySwitch } from "../components/NotifySwitch"
 import { FollowingCmuxBanner } from "../components/FollowingCmuxBanner"
+import { FollowCmuxToggle } from "../components/FollowCmuxToggle"
 import { Logo } from "../components/Logo"
 import { IconChevronLeft } from "@tabler/icons-react"
 import { useNotifyMode } from "../hooks/useNotifyMode"
@@ -696,6 +697,9 @@ export function WorktreeDetailPage() {
   const cmuxButton = summary && (
     <Group gap="xs" wrap="nowrap" style={{ flex: "none" }}>
       <CmuxWorkspaceActions path={path} branch={summary.branch} />
+      {/* Wide only: on a phone the header has no room to spare, and the
+          home page's toggle (or the banner, while following) covers it. */}
+      {wide && <FollowCmuxToggle />}
     </Group>
   )
 

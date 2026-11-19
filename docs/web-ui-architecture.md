@@ -4536,8 +4536,9 @@ in front of its title, and loses it once nothing is unread. The prefix exists
 
 A per-tab toggle on the home page's worktree toolbar (after Sort by) that
 makes the tab open whichever worktree cmux switches to. Rendered only when
-`/api/cmux` says `available`, i.e. the server runs inside cmux. Following can
-only be turned on there: a worktree page has no toggle, just
+`/api/cmux` says `available`, i.e. the server runs inside cmux. Wide, a
+worktree page has the same toggle after its cmux button; narrow (phones) it
+is left out to save header space. Either way the page shows
 `FollowingCmuxBanner` at the top of its sticky header while following is on
 (whether or not cmux is still available, so it can always be turned off),
 with a "Stop following" button.
