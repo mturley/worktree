@@ -99,6 +99,27 @@ func TestHoldRequestsBackfillOnlyForSlack(t *testing.T) {
 	}
 }
 
+// A live Slack hold made before holds requested backfill is upgraded on the
+// next reconcile, so a thread not yet polled still backfills.
+func TestReconcileUpgradesLiveSlackHoldToBackfill(t *testing.T) {
+	conn := newDB(t)
+	tk := mustCreate(t, conn, "blocked")
+	mustAddBlocker(t, conn, tk.ID, resTarget("slack", "C1:1.2"))
+	if _, err := conn.Exec(`UPDATE watcher_subscriptions SET backfill = 0 WHERE subscriber LIKE 'task:%'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileHolds(conn); err != nil {
+		t.Fatal(err)
+	}
+	got, err := watcherdb.BackfillFor(conn, "slack", "C1:1.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got {
+		t.Error("live pre-existing Slack hold still lacks backfill after reconcile")
+	}
+}
+
 func TestHoldReleasedOnDelete(t *testing.T) {
 	conn := newDB(t)
 	tk := mustCreate(t, conn, "blocked")
