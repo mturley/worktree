@@ -924,7 +924,7 @@ func (e *eventEnricher) fillResource(te *TimelineEvent) {
 		// Kept alongside Resource: existing consumers read this directly, and
 		// it is the plain-text fallback when no chip is shown.
 		te.ResourceTitle = dto.Title
-		te.Title = slackEventTitle(te.Source, te.Type, te.Title, dto)
+		te.Title = slackEventTitle(te.Source, te.Type, te.Title, te.Author, te.authorID, dto)
 	}
 	te.Unread = e.unread.IsUnread(te.ID, te.ResourceType, te.ResourceID, te.TS, te.ExternalTS, te.Type, te.Source, te.authorID, te.AuthorType, te.outOfDate)
 	te.CanMarkUnread = e.unread.canMarkUnread(te.ResourceType, te.Type, te.Source, te.authorID, te.outOfDate)
@@ -974,14 +974,15 @@ func (e *eventEnricher) fillTaskWorktrees(te *TimelineEvent, t tasks.Task) {
 // CURRENT name: the user's custom name, else the cached title.
 //
 // The watcher library bakes the thread's root text into the title when it
-// emits the event ("Message in <root text>"), so the stored title never
-// reflects a custom name — a worktree concept, set before or after the event.
+// emits the event ("Message from <author> in <root text>"), so the stored
+// title never reflects a custom name — a worktree concept, set before or
+// after the event.
 // Falling back to the cached title rather than the stored one also keeps
 // events current when the root message is edited, and repairs events stored
 // before watcher v0.14.1, which kept raw "<@U…>" mention tokens. Any other
 // event — or a thread with no name to offer — keeps the title it was stored
 // with.
-func slackEventTitle(source, typ, title string, d *resourceDTO) string {
+func slackEventTitle(source, typ, title, author, authorID string, d *resourceDTO) string {
 	if source != "slack" || d == nil {
 		return title
 	}
@@ -992,10 +993,19 @@ func slackEventTitle(source, typ, title string, d *resourceDTO) string {
 	if name == "" {
 		return title
 	}
+	// Named only when the lookup resolved: the watcher stores the user id
+	// as the name when users.info failed, and an id is never a title.
+	named := author != "" && author != authorID
 	switch watcher.EventType(typ) {
 	case watcher.EventTypeSlackReply:
+		if named {
+			return "Message from " + author + " in " + name
+		}
 		return "Message in " + name
 	case watcher.EventTypeSlackThreadRoot:
+		if named {
+			return "Thread started by " + author + ": " + name
+		}
 		return "Thread started: " + name
 	case watcher.EventTypeWatchStarted:
 		return "Started watching thread: " + name

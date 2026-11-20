@@ -887,7 +887,9 @@ describe("EventRow Slack message preview", () => {
 
   it("is plain text: no link tokens or emphasis marks", () => {
     const { container } = renderWithProvider(<EventRow e={slackEvent()} />)
-    expect(container.textContent).toContain("Bob: see the rollout doc now for max_tokens")
+    // The title names the author, so the snippet starts at the message.
+    expect(container.textContent).toContain("see the rollout doc now for max_tokens")
+    expect(container.textContent).not.toContain("Bob: see")
     expect(container.textContent).not.toContain("<https://")
     expect(container.textContent).not.toContain("*now*")
   })
@@ -925,6 +927,7 @@ describe("EventRow Slack thread root", () => {
     const e = makeEvent({ source: "slack", type: "slack_thread_root", author: "Alice", title: "Thread started: Rollout",
       body: "Alice: kickoff for <https://x.example/r|the rollout> *today*", resource_type: "slack", resource_id: "C1:1.2" })
     const { container } = renderWithProvider(<EventRow e={e} />)
-    expect(container.textContent).toContain("Alice: kickoff for the rollout today")
+    expect(container.textContent).toContain("kickoff for the rollout today")
+    expect(container.textContent).not.toContain("Alice: kickoff")
   })
 })

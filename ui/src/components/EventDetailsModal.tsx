@@ -21,7 +21,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { isGitHubMarkdownBody } from "../lib/githubBody"
 import { Mrkdwn } from "../lib/mrkdwn"
-import { isSlackMessageEvent } from "../lib/slackEvent"
+import { isSlackMessageEvent, slackMessageText } from "../lib/slackEvent"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, markUnreadBlockedReason, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
@@ -460,10 +460,3 @@ function eventResource(
 // here and fall back to their :shortcode: (as in LinkedResourceRow).
 const NO_USERS = {}
 const NO_EMOJI = {}
-
-/** A Slack event body without its leading "Author: ", which the modal's
- * header already shows. */
-function slackMessageText(body: string, author: string | undefined): string {
-  const prefix = author ? `${author}: ` : ""
-  return prefix && body.startsWith(prefix) ? body.slice(prefix.length) : body
-}

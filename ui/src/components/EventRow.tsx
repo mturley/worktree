@@ -25,7 +25,7 @@ import { TooltipWithHints, useModifierOpen } from "../hooks/useModifierOpen"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { BotMark } from "./BotMark"
 import { slackMessageToPlain } from "../lib/mrkdwnPlain"
-import { isSlackMessageEvent } from "../lib/slackEvent"
+import { isSlackMessageEvent, slackMessageText } from "../lib/slackEvent"
 
 /**
  * The text of the row's clamped body line: the body, or the server's snippet
@@ -188,11 +188,11 @@ export function EventRow({
   const plain = useMemo(() => {
     if (!e.body) return null
     if (isGitHubMarkdownBody(e.type)) return githubBodyToPlain(e.body)
-    if (isSlackMessageEvent(e.source, e.type)) return slackMessageToPlain(e.body)
+    if (isSlackMessageEvent(e.source, e.type)) return slackMessageToPlain(slackMessageText(e.body, e.author))
     return null
-  }, [e.source, e.type, e.body])
+  }, [e.source, e.type, e.body, e.author])
   const reveal = e.body && isSlackMessageEvent(e.source, e.type)
-    ? (ts: string[]) => slackMessageToPlain(e.body ?? "", ts)
+    ? (ts: string[]) => slackMessageToPlain(slackMessageText(e.body ?? "", e.author), ts)
     : undefined
   const preview = bodyPreview(e.body, plain, e.match, terms, reveal)
   const showBody = !!preview && !e.type.startsWith("ci_")

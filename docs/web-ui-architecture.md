@@ -2694,7 +2694,8 @@ single in-process loop for as long as the server is up:
   thread's first poll then records `watch_started` stamped at follow time,
   a `slack_thread_root` for the thread's first message (its own event
   because `watch_started` is bookkeeping, hidden from feeds, unread and
-  search; titled `Thread started: …`, keyed `slack:` like a reply), plus a
+  search; titled `Thread started by <author>: …`, keyed `slack:` like a
+  reply), plus a
   `slack_reply` for every earlier reply (up to the 200 messages
   `conversations.replies` returns), each stamped with its **send time**, so
   search finds pre-follow messages and history sits at the right point in
@@ -2704,7 +2705,12 @@ single in-process loop for as long as the server is up:
   "Unread"), so a backfilled reply is unread exactly when Slack says so.
 - **Slack event bodies hold the whole message**: a `slack_reply` or
   `slack_thread_root` body is `Author: ` plus the full text (mentions
-  resolved, line breaks kept), so search matches any of it.
+  resolved, line breaks kept), so search matches any of it. Titles name
+  the author (`Message from <author> in <thread>`, `Thread started by
+  <author>: <thread>`; the plain forms when the name didn't resolve), so the
+  activity row and the details modal show the body without its `Author: `
+  prefix (`slackMessageText`). `slackEventTitle` rebuilds both titles at
+  display time from the event's author and the thread's current name.
   (`watch_started` also carries the full root, but it is hidden from search.)
   Titles and the cached thread title stay at the 60-rune preview. The
   activity row clamps the body to two lines; notifications truncate it.

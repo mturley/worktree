@@ -91,7 +91,7 @@ func initNotifyCursor(conn *sql.DB) (notifyCursor, error) {
 }
 
 // newEvent is one (event, resource) pair past the cursor.
-type newEvent struct{ id, ts, source, typ, title, body, resType, resID string }
+type newEvent struct{ id, ts, source, typ, title, body, author, authorID, resType, resID string }
 
 // botTitlePrefix marks a bot's event in notification text. Notifications are
 // plain text (cmux, macOS, Telegram), so the marker is an emoji here where the
@@ -107,7 +107,8 @@ const botTitlePrefix = "🤖 "
 // and the advanced cursor. The cursor advances whatever the caller then does
 // with the events: delivery is fire-and-forget, never retried.
 func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, error) {
-	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), er.resource_type, er.resource_id,
+	q := `SELECT e.id, e.ts, e.source, e.type, e.title, COALESCE(e.body,''), COALESCE(e.author,''), COALESCE(e.author_id,''),
+	             er.resource_type, er.resource_id,
 	             COALESCE(e.author_type,''), ` + unread.NotMarkedReadSQL + `
 	      FROM watcher_events e JOIN watcher_event_resources er ON er.event_id = e.id
 	      WHERE e.ts >= ? AND e.type NOT IN (?` + strings.Repeat(",?", len(notifySkipTypes)-1) + `)
@@ -131,7 +132,7 @@ func readNewEvents(conn *sql.DB, c notifyCursor) ([]newEvent, notifyCursor, erro
 		var e newEvent
 		var authorType string
 		var notMarkedRead bool
-		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.resType, &e.resID, &authorType, &notMarkedRead); err != nil {
+		if err := rows.Scan(&e.id, &e.ts, &e.source, &e.typ, &e.title, &e.body, &e.author, &e.authorID, &e.resType, &e.resID, &authorType, &notMarkedRead); err != nil {
 			return nil, c, err
 		}
 		if e.ts > next.ts {
@@ -260,7 +261,7 @@ func (s *Server) notifyBatches(events []newEvent) ([]notifyBatch, error) {
 				order = append(order, k)
 			}
 			g.count++
-			g.newest = slackEventTitle(ev.source, ev.typ, ev.title, &g.dto)
+			g.newest = slackEventTitle(ev.source, ev.typ, ev.title, ev.author, ev.authorID, &g.dto)
 			g.body = ev.body
 		}
 		for _, k := range order {
