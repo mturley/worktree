@@ -908,3 +908,12 @@ describe("EventRow Slack message preview", () => {
     expect(container.textContent).toContain("slack error: *missing_scope*")
   })
 })
+
+describe("EventRow Slack thread root", () => {
+  it("previews the thread's first message as plain text, like a reply", () => {
+    const e = makeEvent({ source: "slack", type: "slack_thread_root", author: "Alice", title: "Thread started: Rollout",
+      body: "Alice: kickoff for <https://x.example/r|the rollout> *today*", resource_type: "slack", resource_id: "C1:1.2" })
+    const { container } = renderWithProvider(<EventRow e={e} />)
+    expect(container.textContent).toContain("Alice: kickoff for the rollout today")
+  })
+})

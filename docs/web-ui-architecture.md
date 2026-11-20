@@ -2691,8 +2691,11 @@ single in-process loop for as long as the server is up:
   keeps Slack threads current even when no tab is open, same as PRs/Jira.
 - **Slack backfill on follow**: `resources.Add` subscribes Slack threads
   with `SubscribeOpts{Backfill: true}` (PRs and Jira issues without). A
-  thread's first poll then records `watch_started` stamped at follow time
-  plus a `slack_reply` for every earlier reply (up to the 200 messages
+  thread's first poll then records `watch_started` stamped at follow time,
+  a `slack_thread_root` for the thread's first message (its own event
+  because `watch_started` is bookkeeping, hidden from feeds, unread and
+  search; titled `Thread started: …`, keyed `slack:` like a reply), plus a
+  `slack_reply` for every earlier reply (up to the 200 messages
   `conversations.replies` returns), each stamped with its **send time**, so
   search finds pre-follow messages and history sits at the right point in
   the timeline. Later replies are stamped with the wall clock, because the

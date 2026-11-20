@@ -14,6 +14,8 @@ func TestSlackEventTitle(t *testing.T) {
 			&resourceDTO{CustomName: "Rollout", Title: "hey @ana can you look"}, "New reply in Rollout"},
 		{"falls back to the resolved cached title", "slack", "slack_reply", raw,
 			&resourceDTO{Title: "hey @ana can you look"}, "New reply in hey @ana can you look"},
+		{"thread root", "slack", "slack_thread_root", "Thread started: hey <@U1>",
+			&resourceDTO{CustomName: "Rollout"}, "Thread started: Rollout"},
 		{"watch started", "slack", "watch_started", "Started watching thread: hey <@U1>",
 			&resourceDTO{CustomName: "Rollout"}, "Started watching thread: Rollout"},
 		{"no name keeps the stored title", "slack", "slack_reply", raw, &resourceDTO{}, raw},

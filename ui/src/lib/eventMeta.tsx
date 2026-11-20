@@ -11,6 +11,7 @@ import {
   IconGitMerge,
   IconGitPullRequestClosed,
   IconMessage,
+  IconMessages,
   IconProgress,
   IconSquare,
   IconSquareCheck,
@@ -94,6 +95,7 @@ const TYPES: Record<string, Entry> = {
 
   // Slack
   slack_reply: { color: "grape", Icon: IconMessage, label: "reply" },
+  slack_thread_root: { color: "grape", Icon: IconMessages, label: "thread start" },
 
   // Tasks — worktree's own task events (internal/tasks/events.go). These
   // labels are fallbacks: the server sends its own type_label. Only

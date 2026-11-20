@@ -377,7 +377,7 @@ func TestTaskActivityLinkedToTaskSlackKey(t *testing.T) {
 	}
 }
 
-// Only a Slack reply is a Slack message with a canonical slack: key; a
+// Only a Slack message (a reply or the thread root) has a canonical slack: key; a
 // bookkeeping event on the thread (watch_started) carries an external_ts too
 // but must keep its ev: key.
 func TestSlackKeyOfOnlyReplies(t *testing.T) {
@@ -385,6 +385,13 @@ func TestSlackKeyOfOnlyReplies(t *testing.T) {
 	reply := TimelineEvent{Type: "slack_reply", ResourceType: "slack", ResourceID: "C1:100.1", ExternalTS: "100.5"}
 	if got := slackKeyOf(reply); got != "slack:C1:100.5" {
 		t.Errorf("reply key = %q", got)
+	}
+	// The thread's first message is a Slack message too: a task made from
+	// it in the thread view links to its event.
+	root := reply
+	root.Type, root.ExternalTS = "slack_thread_root", "100.1"
+	if got := slackKeyOf(root); got != "slack:C1:100.1" {
+		t.Errorf("thread root key = %q", got)
 	}
 	for _, typ := range []string{"watch_started", "watcher_error", "slack_thread_resolved"} {
 		ev := reply

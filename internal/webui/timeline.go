@@ -995,6 +995,8 @@ func slackEventTitle(source, typ, title string, d *resourceDTO) string {
 	switch watcher.EventType(typ) {
 	case watcher.EventTypeSlackReply:
 		return "New reply in " + name
+	case watcher.EventTypeSlackThreadRoot:
+		return "Thread started: " + name
 	case watcher.EventTypeWatchStarted:
 		return "Started watching thread: " + name
 	}

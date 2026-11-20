@@ -328,12 +328,13 @@ func validSlackSnapshot(key string, c *tasks.EventSnapshot) (tasks.EventSnapshot
 }
 
 // slackKeyOf is a Slack thread event's canonical event-link key,
-// slack:<channel>:<message ts>; "" for any other event. Only a reply is a
-// Slack message: a bookkeeping event on a thread (watch_started,
+// slack:<channel>:<message ts>; "" for any other event. Only a reply or the
+// thread root is a Slack message: a bookkeeping event on a thread (watch_started,
 // watcher_error) can carry an external_ts too, but it names no message and
 // keeps its ev: key.
 func slackKeyOf(te TimelineEvent) string {
-	if te.ResourceType != "slack" || te.Type != string(watcher.EventTypeSlackReply) || te.ExternalTS == "" {
+	isMessage := te.Type == string(watcher.EventTypeSlackReply) || te.Type == string(watcher.EventTypeSlackThreadRoot)
+	if te.ResourceType != "slack" || !isMessage || te.ExternalTS == "" {
 		return ""
 	}
 	ch, _, ok := strings.Cut(te.ResourceID, ":")
