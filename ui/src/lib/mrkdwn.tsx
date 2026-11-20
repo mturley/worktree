@@ -10,6 +10,7 @@ import { safeHref, unescapeSlackText } from '../api/slackApi'
 import type { User } from '../api/slackApi'
 import { renderEmojiNode } from './renderEmoji'
 import { Mention } from '../components/slack/Mention'
+import { fenceBody, MRKDWN_CODE, mrkdwnEmphasisSpan } from './mrkdwnPlain'
 
 interface MrkdwnProps {
   text: string
@@ -92,20 +93,12 @@ function renderRunEmoji(
 // positions that start with `:`.
 const EMOJI_TOKEN = /:[a-zA-Z0-9_+-]+:/
 
-// A ``` fence (may span lines) or a one-line `code` span.
-const CODE = /(```[\s\S]*?```|`[^`\n]+`)/
-
-// An emphasis span as Slack styles one: its delimiters sit at word
-// boundaries (so max_tokens, a*b*c and @mike_t stay literal) and it never
-// crosses a line. Emoji tokens ride along so an emoji name's underscores
-// (":white_check_mark:") are never read as an _italic_ span.
-const NOT_WORD_BEFORE = '(?<![\\p{L}\\p{N}_])'
-const NOT_WORD_AFTER = '(?![\\p{L}\\p{N}_])'
-const span = (d: string) => {
-  const e = d === '*' ? '\\*' : d // in /u mode only * may (and must) be escaped
-  return `${NOT_WORD_BEFORE}${e}[^${d}\\n]+${e}${NOT_WORD_AFTER}`
-}
-const EMPHASIS = new RegExp(`(${span('*')}|${span('_')}|${span('~')}|${EMOJI_TOKEN.source})`, 'u')
+// Emphasis spans (see mrkdwnEmphasisSpan) plus emoji tokens, so an emoji
+// name's underscores (":white_check_mark:") are never read as an _italic_ span.
+const EMPHASIS = new RegExp(
+  `(${mrkdwnEmphasisSpan('*')}|${mrkdwnEmphasisSpan('_')}|${mrkdwnEmphasisSpan('~')}|${EMOJI_TOKEN.source})`,
+  'u',
+)
 
 /** Renders a run with emphasis as the OUTER split: code spans and single-level
  * `*bold*`/`_italic_`/`~strike~` segments are pulled out first, and each
@@ -123,16 +116,14 @@ function renderStyledText(
   // split() with a capturing group puts the captures at the odd indices, so
   // a piece is code because the split CAPTURED it, never merely because it
   // happens to begin and end with a backtick.
-  const codeSplit = text.split(CODE)
+  const codeSplit = text.split(MRKDWN_CODE)
   return codeSplit.map((chunk, ci) => {
     const codeKey = `${keyPrefix}-c-${ci}`
     if (ci % 2 === 1) {
       if (chunk.startsWith('```')) {
-        // Slack drops the line breaks that hug a fence's delimiters.
-        const body = chunk.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '')
         return (
           <code key={codeKey} style={{ display: 'block', whiteSpace: 'pre-wrap' }}>
-            {unescapeSlackText(body)}
+            {unescapeSlackText(fenceBody(chunk))}
           </code>
         )
       }

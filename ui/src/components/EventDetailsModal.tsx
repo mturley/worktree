@@ -21,6 +21,7 @@ import { eventFullUiHref } from "../lib/fullUiLink"
 import { useMiniModalFullScreen } from "../hooks/useMiniModalFullScreen"
 import { isGitHubMarkdownBody } from "../lib/githubBody"
 import { Mrkdwn } from "../lib/mrkdwn"
+import { isSlackMessageEvent } from "../lib/slackEvent"
 import { MARK_READ_BUTTON_PROPS, READ_BOX_BORDER, UNREAD_BOX_BORDER } from "../lib/unread"
 import { canMarkEventRead, canMarkEventUnread, markUnreadBlockedReason, useMarkEventRead, useMarkEventUnread } from "../hooks/useMarkEventRead"
 import { canMarkSlackEventRead, type SlackMarkPlan, useMarkSlackEventRead } from "../hooks/useMarkSlackEventRead"
@@ -381,7 +382,7 @@ export function EventDetailsModal({ e: shown, onClose, resolveResource, path, on
             ) : e.body && (
               // Preserve the author's line breaks; this is comment text, not prose.
               <Text size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                {e.source === "slack" && SLACK_MESSAGE_TYPES.includes(e.type) ? (
+                {isSlackMessageEvent(e.source, e.type) ? (
                   <Mrkdwn text={slackMessageText(e.body, e.author)} users={NO_USERS} emoji={NO_EMOJI} />
                 ) : (
                   e.body
@@ -458,9 +459,6 @@ function eventResource(
 // resolved to names, so no user directory is needed; custom emoji have no map
 // here and fall back to their :shortcode: (as in LinkedResourceRow).
 const NO_USERS = {}
-// Only these carry message text; a Slack watcher_error's body is an error
-// string, where mrkdwn would italicise codes like missing_scope.
-const SLACK_MESSAGE_TYPES = ["slack_reply", "watch_started"]
 const NO_EMOJI = {}
 
 /** A Slack event body without its leading "Author: ", which the modal's

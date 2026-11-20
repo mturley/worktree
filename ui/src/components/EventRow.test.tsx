@@ -879,3 +879,32 @@ describe("EventRow bot mark", () => {
     expect(title!.contains(screen.getByLabelText("Bot"))).toBe(true)
   })
 })
+
+describe("EventRow Slack message preview", () => {
+  const body = "Bob: see <https://x.example/a|the rollout doc> *now* for max_tokens"
+  const slackEvent = (o: Partial<TimelineEvent> = {}) =>
+    makeEvent({ source: "slack", type: "slack_reply", author: "Bob", body, resource_type: "slack", resource_id: "C1:1.2", ...o })
+
+  it("is plain text: no link tokens or emphasis marks", () => {
+    const { container } = renderWithProvider(<EventRow e={slackEvent()} />)
+    expect(container.textContent).toContain("Bob: see the rollout doc now for max_tokens")
+    expect(container.textContent).not.toContain("<https://")
+    expect(container.textContent).not.toContain("*now*")
+  })
+
+  it("rebuilds a body search snippet from the plain text", () => {
+    // The server cuts its snippet from the raw body, link token and all.
+    const e = slackEvent({ match: { field: "body", snippet: "…<https://x.example/a|the rollout doc>…" } })
+    const { container } = renderWithProvider(
+      <SearchContext.Provider value={{ terms: ["rollout"] }}><EventRow e={e} /></SearchContext.Provider>,
+    )
+    expect(container.textContent).toContain("the rollout doc")
+    expect(container.textContent).not.toContain("<https://")
+  })
+
+  it("leaves a Slack watcher error's body as it is", () => {
+    const e = slackEvent({ type: "watcher_error", author: "", body: "slack error: *missing_scope*" })
+    const { container } = renderWithProvider(<EventRow e={e} />)
+    expect(container.textContent).toContain("slack error: *missing_scope*")
+  })
+})
