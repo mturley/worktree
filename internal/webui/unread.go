@@ -30,7 +30,7 @@ import (
 // a missing dot is a smaller lie than a wrong one.
 type unreadIndex struct {
 	counts map[string]unread.Summary
-	// Per-thread counts of replies newer than Slack's cursor; see fill for
+	// Per-thread counts of messages newer than Slack's cursor; see fill for
 	// how they are reconciled with has_unread.
 	slackCounts map[string]int
 	cursors     map[string]string
@@ -192,13 +192,13 @@ func (s *Server) newUnreadIndex() *unreadIndex {
 // here, so a resource counts the same on its card, in its worktree's total,
 // on a timeline chip and in mark-all-read.
 //
-// A Slack thread's count is the replies newer than Slack's cursor, as the
+// A Slack thread's count is the messages newer than Slack's cursor, as the
 // timelines mark them — but reconciled with has_unread, which is Slack's own
 // verdict and drives the thread's dot. Slack says read: 0, whatever stale
 // events say. Slack says unread: at least 1, because an unread message the
-// poller never recorded as an event (an unread root, say) is still unread,
-// and a dot with no number beside it would read as a bug. So the count and
-// the dot cannot disagree. The DTO must already be enriched (HasUnread set)
+// poller never recorded as an event (the root of a thread first polled
+// without backfill, say) is still unread, and a dot with no number beside it
+// would read as a bug. So the count and the dot cannot disagree. The DTO must already be enriched (HasUnread set)
 // when this is called.
 //
 // Slack threads get no through_ts: Slack owns their cursor, and they are

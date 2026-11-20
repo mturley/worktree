@@ -29,8 +29,9 @@ export const EVENT_CATEGORIES: Record<string, EventCategory[]> = {
     { key: "assigned", label: "Assignee", types: ["jira_assigned"] },
     { key: "edits", label: "Edits", types: ["jira_description_changed", "jira_labels_changed"] },
   ],
-  // Slack threads only produce replies today, so a bar would be one button
-  // that changes nothing. Add categories here when the library grows more.
+  // A Slack thread's events are its messages (the first one and the
+  // replies), so a bar would be one button that changes nothing. Add
+  // categories here when the library grows other kinds.
   slack: [],
   // Task categories name exact event types (never a prefix). The server also
   // accepts the bare value "task" for every task_*/subtask_* event, which a

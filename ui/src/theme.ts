@@ -17,7 +17,7 @@ import { escCloseButtonProps } from "./components/escCloseButton"
  * purpose, and the reason is the same as when it was blue: the event colours
  * (lib/eventMeta.tsx) use stock hues at shade 5 to tell event types apart,
  * and two of them — violet for pr_merged, grape for jira_status_change and
- * slack_reply — sit in this hue family. Staying deep and desaturated keeps
+ * the Slack message types — sit in this hue family. Staying deep and desaturated keeps
  * the chrome off them; in OKLab the filled chrome is 0.22 from violet[5],
  * where the old blue ramp was only 0.16 from indigo[5].
  *

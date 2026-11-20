@@ -342,7 +342,7 @@ function ResourceNotifySwitch({ r, path, notify }: { r: ResourceDTO; path: strin
   const qc = useQueryClient()
   return (
     <NotifySwitch
-      // A thread's events are its replies, and "messages" is what Slack calls them.
+      // A thread's events are its messages (the first one and the replies).
       label={r.type === "slack" ? "Notify on new messages" : "Notify on new events"}
       checked={notify.all || Boolean(r.notify)}
       mode={notify.mode}
