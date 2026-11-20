@@ -131,6 +131,41 @@ describe('Mrkdwn', () => {
     expect(c4.querySelector('code')?.textContent).toBe('code')
   })
 
+  // Slack only styles a delimiter at a word boundary, and never across a
+  // line: engineering text full of snake_case must come through untouched.
+  it('leaves underscores inside words alone', () => {
+    const { container } = renderWithProvider(<Mrkdwn text="set max_tokens and top_p, cc @mike_t and @bob_s" users={{}} emoji={{}} />)
+    expect(container.querySelector('em')).toBeNull()
+    expect(container.textContent).toContain('set max_tokens and top_p, cc @mike_t and @bob_s')
+  })
+
+  it('leaves asterisks and tildes inside words alone', () => {
+    const { container } = renderWithProvider(<Mrkdwn text="a*b*c and x~y~z" users={{}} emoji={{}} />)
+    expect(container.querySelector('strong')).toBeNull()
+    expect(container.querySelector('del')).toBeNull()
+  })
+
+  it('still styles a delimited word next to punctuation', () => {
+    const { container } = renderWithProvider(<Mrkdwn text="(*bold*), _it_." users={{}} emoji={{}} />)
+    expect(container.querySelector('strong')?.textContent).toBe('bold')
+    expect(container.querySelector('em')?.textContent).toBe('it')
+  })
+
+  it('never styles across a line break', () => {
+    const { container } = renderWithProvider(<Mrkdwn text={"*start\nend*"} users={{}} emoji={{}} />)
+    expect(container.querySelector('strong')).toBeNull()
+    expect(container.textContent).toContain('*start\nend*')
+  })
+
+  it('renders a ``` fence as one code block, contents literal', () => {
+    const { container } = renderWithProvider(<Mrkdwn text={"before\n```\nfoo_bar *x*\n```\nafter"} users={{}} emoji={{}} />)
+    const codes = container.querySelectorAll('code')
+    expect(codes).toHaveLength(1)
+    expect(codes[0].textContent).toBe('foo_bar *x*')
+    expect(container.textContent).not.toContain('`')
+    expect(container.querySelector('strong')).toBeNull()
+  })
+
   it('leaves an unpaired asterisk as literal text', () => {
     const { container } = renderWithProvider(<Mrkdwn text="a * b" users={{}} emoji={{}} />)
     expect(container.querySelector('strong')).toBeNull()

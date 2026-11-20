@@ -76,6 +76,7 @@ func ReconcileHolds(conn *sql.DB) error {
 		return fmt.Errorf("reconcile holds: %w", err)
 	}
 	live := map[hold]string{} // -> the live hold's URL
+	liveBackfill := map[hold]bool{}
 	userTomb := map[hold]bool{}
 	nowTS := now()
 	for _, s := range all {
@@ -83,6 +84,7 @@ func ReconcileHolds(conn *sql.DB) error {
 		switch {
 		case s.DeletedAt == nil && (s.ExpiresAt == nil || *s.ExpiresAt > nowTS):
 			live[h] = s.Resource.URL
+			liveBackfill[h] = s.Backfill
 		case s.DeletedAt != nil && s.UnsubscribedByUser:
 			userTomb[h] = true
 		}
@@ -115,7 +117,9 @@ func ReconcileHolds(conn *sql.DB) error {
 			urls[k] = u
 		}
 		cur, isLive := live[h]
-		if isLive && cur == u {
+		// A hold made before holds requested backfill is rewritten once, so
+		// a Slack thread not yet polled still backfills.
+		if isLive && cur == u && liveBackfill[h] == (h.typ == "slack") {
 			continue
 		}
 		r := watcher.Resource{Type: h.typ, ID: h.id, URL: u}
@@ -127,8 +131,10 @@ func ReconcileHolds(conn *sql.DB) error {
 		}
 		// Not IfAbsent: a live row whose lease expired is not live here, and
 		// a plain Subscribe clears its expiry (TTL 0 never expires). On a
-		// live hold it only rewrites the URL.
-		if err := watcherdb.Subscribe(conn, h.sub, r, watcherdb.SubscribeOpts{}); err != nil {
+		// live hold it only rewrites the URL. A Slack thread backfills its
+		// earlier replies on its first poll, as resources.Add does.
+		opts := watcherdb.SubscribeOpts{Backfill: h.typ == "slack"}
+		if err := watcherdb.Subscribe(conn, h.sub, r, opts); err != nil {
 			return fmt.Errorf("reconcile holds: hold %s %s:%s: %w", h.sub, h.typ, h.id, err)
 		}
 	}

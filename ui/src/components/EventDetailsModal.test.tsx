@@ -86,6 +86,47 @@ describe("EventDetailsModal", () => {
     expect(getComputedStyle(node).whiteSpace).toBe("pre-wrap")
   })
 
+  it("renders a Slack reply as Slack text, without repeating its author", () => {
+    const body = "Bob: see <https://x.example/a|the doc> *now*\nsecond line"
+    wrap(<EventDetailsModal e={ev({ source: "slack", type: "slack_reply", author: "Bob", body,
+      resource_type: "slack", resource_id: "C1:1.2" })} onClose={vi.fn()} />)
+    const dialog = screen.getByRole("dialog")
+    const link = screen.getByRole("link", { name: "the doc" })
+    expect(link).toHaveAttribute("href", "https://x.example/a")
+    expect(dialog.querySelector("strong")?.textContent).toBe("now")
+    expect(dialog.textContent).not.toContain("<https://")
+    expect(dialog.textContent).not.toContain("Bob: see")
+    expect(link.closest("p, div")?.textContent).toContain("\nsecond line")
+  })
+
+  it("renders a Slack thread's watch_started body as Slack text too", () => {
+    wrap(<EventDetailsModal e={ev({ source: "slack", type: "watch_started", author: "", body: "kickoff _today_",
+      resource_type: "slack", resource_id: "C1:1.2" })} onClose={vi.fn()} />)
+    expect(screen.getByRole("dialog").querySelector("em")?.textContent).toBe("today")
+  })
+
+  it("leaves a Slack watcher error's body as plain text", () => {
+    wrap(<EventDetailsModal e={ev({ source: "slack", type: "watcher_error", author: "",
+      body: "slack error: missing_scope and not_allowed_token_type", resource_type: "slack", resource_id: "C1:1.2" })} onClose={vi.fn()} />)
+    const dialog = screen.getByRole("dialog")
+    expect(dialog.querySelector("em")).toBeNull()
+    expect(dialog.textContent).toContain("missing_scope and not_allowed_token_type")
+  })
+
+  it("leaves a non-Slack watch_started body alone", () => {
+    wrap(<EventDetailsModal e={ev({ source: "jira", type: "watch_started", author: "", body: "a *jira* summary",
+      resource_type: "jira", resource_id: "K-1" })} onClose={vi.fn()} />)
+    expect(screen.getByRole("dialog").querySelector("strong")).toBeNull()
+  })
+
+  it("leaves a non-Slack body's markup alone", () => {
+    wrap(<EventDetailsModal e={ev({ source: "jira", type: "jira_comment", author: "Bob", body: "Bob: *not bold*",
+      resource_type: "jira", resource_id: "K-1" })} onClose={vi.fn()} />)
+    const dialog = screen.getByRole("dialog")
+    expect(dialog.querySelector("strong")).toBeNull()
+    expect(dialog.textContent).toContain("Bob: *not bold*")
+  })
+
   it("Make task closes this modal first, then makes the task", async () => {
     const calls: string[] = []
     const onClose = vi.fn(() => calls.push("close"))

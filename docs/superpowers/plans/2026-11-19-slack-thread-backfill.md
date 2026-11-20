@@ -105,3 +105,48 @@ Approved in conversation: reply bodies become `Author: <full text>` (mentions re
 - [ ] **Step 3: Implement.** A `replyBody(author, text)` helper; `emitReplies` in send-time (backfill) mode calls `UpdateEventBody` for a duplicate.
 - [ ] **Step 4: Run** `go test ./...` in watcher → PASS. Commit, tag `v0.29.0` (ask Mike before pushing).
 - [ ] **Step 5:** worktree: re-pin `v0.29.0`, update the "Polling model" doc paragraph (bodies hold the full text), `make test`, commit.
+
+---
+
+## Follow-ups (added 2026-11-19 after the catch-up; approved in conversation)
+
+Task 3 ran: 37 followed + 67 archived threads backfilled (1 archived thread deleted in Slack), 0 duplicates, 0 bare-id bodies; archived threads' stale `last_read`/`has_unread` refreshed from Slack (archived unread 168 → 0). The catch-up surfaced a library decode bug (Task 7). Final-review minors 1 (tabs need reload) and 3 (dedup race across processes) get no code change.
+
+Library work on watcher `main`, one release `v0.30.0` (ask Mike before pushing); worktree work on branch `slack-backfill-followups`.
+
+### Task 5: Library — a failed first poll can't lose the backfill (minor 2)
+
+**Files:** `~/git/watcher/slack/poller.go` (`processThread`), `slack/poller_test.go`.
+
+- [ ] Failing test `TestPoll_BackfillRetriesAfterPartialFirstPoll`: backfill subscription; seed one `slack_reply` (as if a first poll died after recording it, with no `watch_started`); poll → every other reply recorded send-dated, then exactly one `watch_started`.
+- [ ] Implement: the first poll is "no `watch_started` recorded for the resource" (`db.IsDuplicate` with `MatchTypeOnly`), not "empty cursor". With backfill, record replies first, `watch_started` last; any error returns before `watch_started`, so the next poll retries. Without backfill, unchanged. `BackfillThread`'s never-polled guard uses the same test.
+- [ ] `go test ./...` → PASS. Commit.
+
+### Task 6: Library — poll-level malformed-ts test (minor 4)
+
+- [ ] `TestPoll_MalformedReplyTSStampedNow`: live poll of a reply with ts `"abc"` (thread root valid) → one `slack_reply`, `external_ts` `"abc"`, `ts` within a minute of now. Should pass on arrival (behavior already right); run it, then mutate `emitEvent`'s fallback to confirm it can fail, restore. Commit with Task 5 or 7.
+
+### Task 7: Library — decode an accessory whose `text` is an object
+
+A section accessory such as a button carries `"text": {"type":"plain_text","text":"View"}`; `rawBlockElement.Text` is a string, so `conversations.replies` fails to decode and the whole thread is unpollable.
+
+**Files:** `slack/types.go` (`rawBlockElement` gets `UnmarshalJSON` accepting a string or an object's `text`), `slack/testdata/` (synthetic fixture), `slack/normalize_test.go`, `~/.worktrees/worktree/slack-backfill-followups/docs/reverse-engineering/slack-web-api.md`.
+
+- [ ] Failing test decoding a synthetic reply whose attachment has a section block with a button accessory (`text` object) → no error; the accessory's text is the label.
+- [ ] Implement; `go test ./...` → PASS; commit; tag `v0.30.0` (Tasks 5–7); ask Mike; push.
+- [ ] Document the quirk in the RE doc (worktree branch commit).
+
+### Task 8: worktree — task holds backfill Slack threads (minor 5)
+
+**Files:** `internal/tasks/holds.go:131`, `internal/tasks/holds_test.go`.
+
+- [ ] Failing test: reconciling a task with a Slack-thread resource blocker → `watcherdb.BackfillFor(conn, "slack", id)` is true; a PR blocker → false.
+- [ ] Implement: `SubscribeOpts{Backfill: r.Type == "slack"}`. Re-pin `v0.30.0`. `go test ./internal/tasks/` → PASS. Commit.
+
+### Task 9: worktree — render Slack event bodies as Slack text in the event details modal
+
+**Files:** `ui/src/components/EventDetailsModal.tsx`, its test.
+
+- [ ] Failing tests: a `slack_reply` with `author: "Bob"`, body `"Bob: see <https://x.example/a|the doc> *now*\nsecond line"` renders a link named "the doc" to `https://x.example/a`, bold "now", keeps the line break, and does not repeat "Bob: " (the header already names the author); a `watch_started` Slack body renders through the same path; a non-Slack body is unchanged.
+- [ ] Implement: for `source === "slack"`, strip a leading `${author}: ` when present and render with `<Mrkdwn users={{}} emoji={{}}>` inside the existing pre-wrap `Text` (the same no-directory usage as `LinkedResourceRow`; mentions are already resolved server-side).
+- [ ] `npx vitest run src/components/EventDetailsModal` → PASS; `make test` → PASS. Commit.
