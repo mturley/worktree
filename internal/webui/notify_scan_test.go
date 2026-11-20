@@ -233,12 +233,12 @@ func TestSlackReplyNotificationUsesCustomName(t *testing.T) {
 	notifyprefs.SetResource(conn, a, "slack", "C1:1.2", true)
 	s := &Server{DB: conn}
 	got, err := s.notifyBatches([]newEvent{{id: "e1", ts: "1", source: "slack", typ: "slack_reply",
-		title: "New reply in hey <@U1> can you look", resType: "slack", resID: "C1:1.2"}})
+		title: "Message in hey <@U1> can you look", resType: "slack", resID: "C1:1.2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Body != "New reply in Rollout" {
-		t.Fatalf("got %+v, want body %q", got, "New reply in Rollout")
+	if len(got) != 1 || got[0].Body != "Message in Rollout" {
+		t.Fatalf("got %+v, want body %q", got, "Message in Rollout")
 	}
 }
 

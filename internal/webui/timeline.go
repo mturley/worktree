@@ -974,7 +974,7 @@ func (e *eventEnricher) fillTaskWorktrees(te *TimelineEvent, t tasks.Task) {
 // CURRENT name: the user's custom name, else the cached title.
 //
 // The watcher library bakes the thread's root text into the title when it
-// emits the event ("New reply in <root text>"), so the stored title never
+// emits the event ("Message in <root text>"), so the stored title never
 // reflects a custom name — a worktree concept, set before or after the event.
 // Falling back to the cached title rather than the stored one also keeps
 // events current when the root message is edited, and repairs events stored
@@ -994,7 +994,7 @@ func slackEventTitle(source, typ, title string, d *resourceDTO) string {
 	}
 	switch watcher.EventType(typ) {
 	case watcher.EventTypeSlackReply:
-		return "New reply in " + name
+		return "Message in " + name
 	case watcher.EventTypeSlackThreadRoot:
 		return "Thread started: " + name
 	case watcher.EventTypeWatchStarted:

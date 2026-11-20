@@ -4,16 +4,16 @@ import "testing"
 
 func TestSlackEventTitle(t *testing.T) {
 	t.Parallel()
-	const raw = "New reply in hey <@U1> can you look"
+	const raw = "Message in hey <@U1> can you look"
 	cases := []struct {
 		name, source, typ, title string
 		d                        *resourceDTO
 		want                     string
 	}{
 		{"custom name wins", "slack", "slack_reply", raw,
-			&resourceDTO{CustomName: "Rollout", Title: "hey @ana can you look"}, "New reply in Rollout"},
+			&resourceDTO{CustomName: "Rollout", Title: "hey @ana can you look"}, "Message in Rollout"},
 		{"falls back to the resolved cached title", "slack", "slack_reply", raw,
-			&resourceDTO{Title: "hey @ana can you look"}, "New reply in hey @ana can you look"},
+			&resourceDTO{Title: "hey @ana can you look"}, "Message in hey @ana can you look"},
 		{"thread root", "slack", "slack_thread_root", "Thread started: hey <@U1>",
 			&resourceDTO{CustomName: "Rollout"}, "Thread started: Rollout"},
 		{"watch started", "slack", "watch_started", "Started watching thread: hey <@U1>",
