@@ -16,6 +16,28 @@ import (
 type cmuxFocusMsg struct {
 	WorkspaceID string `json:"workspace_id"`
 	Path        string `json:"path"`
+	// Title and Color name the workspace (DisplayTitle; custom_color or "").
+	// The UI needs them for a workspace with no worktree, which /api/cmux
+	// does not list: the following banner names it.
+	Title string `json:"title"`
+	Color string `json:"color"`
+}
+
+// focusMsgFor builds the message for workspaceID from a listing in hand;
+// unknown to it, the message carries the ID alone.
+func (s *Server) focusMsgFor(workspaces []cmux.Workspace, workspaceID string) cmuxFocusMsg {
+	msg := cmuxFocusMsg{WorkspaceID: workspaceID, Path: s.worktreeIn(workspaces, workspaceID)}
+	for _, ws := range workspaces {
+		if ws.ID != workspaceID {
+			continue
+		}
+		msg.Title = ws.DisplayTitle()
+		if ws.CustomColor != nil {
+			msg.Color = *ws.CustomColor
+		}
+		break
+	}
+	return msg
 }
 
 // cmuxFocusHub fans focus changes out to every open stream. last dedupes:
@@ -112,7 +134,12 @@ func (s *Server) onCmuxFocus(workspaceID string) {
 	if !hub.changed(workspaceID) {
 		return
 	}
-	hub.publish(cmuxFocusMsg{WorkspaceID: workspaceID, Path: s.worktreeForWorkspace(workspaceID)})
+	workspaces, err := s.listCmuxWorkspaces()
+	if err != nil {
+		hub.publish(cmuxFocusMsg{WorkspaceID: workspaceID})
+		return
+	}
+	hub.publish(s.focusMsgFor(workspaces, workspaceID))
 }
 
 // handleCmuxFocused: GET /api/cmux/focused
@@ -133,25 +160,16 @@ func (s *Server) handleCmuxFocused(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, ws := range workspaces {
 		if ws.Selected {
-			writeJSON(w, http.StatusOK, cmuxFocusMsg{WorkspaceID: ws.ID, Path: s.worktreeIn(workspaces, ws.ID)})
+			writeJSON(w, http.StatusOK, s.focusMsgFor(workspaces, ws.ID))
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, cmuxFocusMsg{})
 }
 
-// worktreeForWorkspace is the first registered worktree, in registry order,
-// open in the workspace, or "" when there is none or it cannot be told.
-// Matched through cmux.Match so symlinked paths agree with /api/cmux.
-func (s *Server) worktreeForWorkspace(workspaceID string) string {
-	workspaces, err := s.listCmuxWorkspaces()
-	if err != nil {
-		return ""
-	}
-	return s.worktreeIn(workspaces, workspaceID)
-}
-
-// worktreeIn is worktreeForWorkspace against a listing already in hand.
+// worktreeIn is the first registered worktree, in registry order, open in
+// the workspace, or "" when there is none or it cannot be told. Matched
+// through cmux.Match so symlinked paths agree with /api/cmux.
 func (s *Server) worktreeIn(workspaces []cmux.Workspace, workspaceID string) string {
 	if s.DB == nil {
 		return ""
