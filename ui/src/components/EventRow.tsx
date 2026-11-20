@@ -24,17 +24,20 @@ import { WorktreeName, WorktreePreview } from "./WorktreeName"
 import { TooltipWithHints, useModifierOpen } from "../hooks/useModifierOpen"
 import { eventFullUiHref } from "../lib/fullUiLink"
 import { BotMark } from "./BotMark"
+import { slackMessageToPlain } from "../lib/mrkdwnPlain"
+import { isSlackMessageEvent } from "../lib/slackEvent"
 
 /**
  * The text of the row's clamped body line: the body, or the server's snippet
  * around a search hit in it, which is centred on the hit that the clamped
  * first lines may not contain.
  *
- * A GitHub comment's body is Markdown and HTML, shown here as plain text
- * (`plain`, parsed once per body, not per keystroke of a search). The server
- * cuts its snippet from the raw body, so one is cut again here, by the same
- * rule, from the plain text: the first term that occurs in it wins, and a hit
- * only in the markup (a URL, a tag name) falls back to the text itself.
+ * A GitHub comment's body is Markdown and HTML, and a Slack message's is
+ * mrkdwn; both are shown here as plain text (`plain`, parsed once per body,
+ * not per keystroke of a search). The server cuts its snippet from the raw
+ * body, so one is cut again here, by the same rule, from the plain text: the
+ * first term that occurs in it wins, and a hit only in the markup (a URL, a
+ * tag name) falls back to the text itself.
  */
 function bodyPreview(body: string | undefined, plain: string | null, match: TimelineEvent["match"], terms: string[]): string {
   if (!body) return ""
@@ -170,10 +173,12 @@ export function EventRow({
    * The details modal still shows the list in full.
    */
   const { terms } = useSearchContext()
-  const plain = useMemo(
-    () => (e.body && isGitHubMarkdownBody(e.type) ? githubBodyToPlain(e.body) : null),
-    [e.type, e.body],
-  )
+  const plain = useMemo(() => {
+    if (!e.body) return null
+    if (isGitHubMarkdownBody(e.type)) return githubBodyToPlain(e.body)
+    if (isSlackMessageEvent(e.source, e.type)) return slackMessageToPlain(e.body)
+    return null
+  }, [e.source, e.type, e.body])
   const preview = bodyPreview(e.body, plain, e.match, terms)
   const showBody = !!preview && !e.type.startsWith("ci_")
   const bodyMatch = e.match?.field === "body" && showBody

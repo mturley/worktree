@@ -32,3 +32,50 @@ export function mrkdwnToPlain(text: string, users?: Record<string, Pick<User, "D
   // One pass, so "&amp;lt;" becomes "&lt;", not "<".
   return plain.replace(/&(lt|gt|amp);/g, (m) => ENTITIES[m])
 }
+
+// A ``` fence (may span lines) or a one-line `code` span, as a capturing
+// group: split() puts each code piece at an odd index.
+export const MRKDWN_CODE = /(```[\s\S]*?```|`[^`\n]+`)/
+
+/** A fence's contents, without the line breaks that hug its delimiters
+ * (Slack doesn't show them). */
+export function fenceBody(fence: string): string {
+  return fence.slice(3, -3).replace(/^\n/, "").replace(/\n$/, "")
+}
+
+const NOT_WORD_BEFORE = "(?<![\\p{L}\\p{N}_])"
+const NOT_WORD_AFTER = "(?![\\p{L}\\p{N}_])"
+
+/**
+ * An emphasis span (`*bold*`, `_italic_`, `~strike~`) as Slack styles one:
+ * its delimiters sit at word boundaries (so max_tokens, a*b*c and @mike_t
+ * stay literal) and it never crosses a line. A regex source for the /u flag.
+ */
+export function mrkdwnEmphasisSpan(d: "*" | "_" | "~"): string {
+  const e = d === "*" ? "\\*" : d // in /u mode only * may (and must) be escaped
+  return `${NOT_WORD_BEFORE}${e}[^${d}\\n]+${e}${NOT_WORD_AFTER}`
+}
+
+const EMPHASIS_ANY = new RegExp(
+  `${mrkdwnEmphasisSpan("*")}|${mrkdwnEmphasisSpan("_")}|${mrkdwnEmphasisSpan("~")}`,
+  "gu",
+)
+
+/**
+ * A whole Slack message as plain text, for a one- or two-line preview:
+ * mrkdwnToPlain's tokens and entities, plus emphasis marks and code
+ * backticks dropped (code contents stay literal). Matches what `<Mrkdwn>`
+ * renders, minus the styling.
+ */
+export function slackMessageToPlain(text: string): string {
+  return text
+    .split(MRKDWN_CODE)
+    .map((chunk, i) => {
+      if (i % 2 === 1) {
+        const code = chunk.startsWith("```") ? fenceBody(chunk) : chunk.slice(1, -1)
+        return code.replace(/&(lt|gt|amp);/g, (m) => ENTITIES[m])
+      }
+      return mrkdwnToPlain(chunk.replace(EMPHASIS_ANY, (m) => m.slice(1, -1)))
+    })
+    .join("")
+}
