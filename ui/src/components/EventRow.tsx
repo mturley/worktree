@@ -36,17 +36,29 @@ import { isSlackMessageEvent } from "../lib/slackEvent"
  * mrkdwn; both are shown here as plain text (`plain`, parsed once per body,
  * not per keystroke of a search). The server cuts its snippet from the raw
  * body, so one is cut again here, by the same rule, from the plain text: the
- * first term that occurs in it wins, and a hit only in the markup (a URL, a
- * tag name) falls back to the text itself.
+ * first term that occurs in it wins. A hit only in a Slack link's URL is cut
+ * from the text with that URL written in place of its label; any other hit
+ * only in the markup (a URL, a tag name) falls back to the text itself.
  */
-function bodyPreview(body: string | undefined, plain: string | null, match: TimelineEvent["match"], terms: string[]): string {
+function bodyPreview(
+  body: string | undefined,
+  plain: string | null,
+  match: TimelineEvent["match"],
+  terms: string[],
+  reveal?: (terms: string[]) => string,
+): string {
   if (!body) return ""
   const inBody = match?.field === "body"
   if (plain === null) return inBody ? match.snippet : body
   if (inBody) {
-    for (const t of terms) {
-      const s = snippet(plain, t)
-      if (s) return s
+    // The plain text first; then, if the hit was only in markup, the text
+    // with what the markup hid written out (a Slack link's URL), so the
+    // row shows why it matched.
+    for (const text of reveal ? [plain, reveal(terms)] : [plain]) {
+      for (const t of terms) {
+        const s = snippet(text, t)
+        if (s) return s
+      }
     }
   }
   return plain
@@ -179,7 +191,10 @@ export function EventRow({
     if (isSlackMessageEvent(e.source, e.type)) return slackMessageToPlain(e.body)
     return null
   }, [e.source, e.type, e.body])
-  const preview = bodyPreview(e.body, plain, e.match, terms)
+  const reveal = e.body && isSlackMessageEvent(e.source, e.type)
+    ? (ts: string[]) => slackMessageToPlain(e.body ?? "", ts)
+    : undefined
+  const preview = bodyPreview(e.body, plain, e.match, terms, reveal)
   const showBody = !!preview && !e.type.startsWith("ci_")
   const bodyMatch = e.match?.field === "body" && showBody
 

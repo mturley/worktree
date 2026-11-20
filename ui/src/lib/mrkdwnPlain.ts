@@ -66,8 +66,13 @@ const EMPHASIS_ANY = new RegExp(
  * mrkdwnToPlain's tokens and entities, plus emphasis marks and code
  * backticks dropped (code contents stay literal). Matches what `<Mrkdwn>`
  * renders, minus the styling.
+ *
+ * `revealTerms`: a link whose URL contains any of them (case-insensitive)
+ * is written as its URL instead of its label, so a search that matched the
+ * URL can show the hit.
  */
-export function slackMessageToPlain(text: string): string {
+export function slackMessageToPlain(text: string, revealTerms: string[] = []): string {
+  const terms = revealTerms.map((t) => t.toLowerCase()).filter((t) => t !== "")
   return text
     .split(MRKDWN_CODE)
     .map((chunk, i) => {
@@ -75,7 +80,13 @@ export function slackMessageToPlain(text: string): string {
         const code = chunk.startsWith("```") ? fenceBody(chunk) : chunk.slice(1, -1)
         return code.replace(/&(lt|gt|amp);/g, (m) => ENTITIES[m])
       }
-      return mrkdwnToPlain(chunk.replace(EMPHASIS_ANY, (m) => m.slice(1, -1)))
+      const revealed = terms.length === 0 ? chunk : chunk.replace(LABELLED_LINK, (m, url: string) =>
+        terms.some((t) => url.toLowerCase().includes(t)) ? `<${url}>` : m)
+      return mrkdwnToPlain(revealed.replace(EMPHASIS_ANY, (m) => m.slice(1, -1)))
     })
     .join("")
 }
+
+// A labelled link token, <url|label>: the url is anything that isn't a
+// mention, channel or broadcast (those start with @, # or !).
+const LABELLED_LINK = /<([^@#!<>|][^<>|]*)\|[^<>]*>/g

@@ -40,3 +40,15 @@ describe("slackMessageToPlain", () => {
     expect(slackMessageToPlain(input)).toBe(want)
   })
 })
+
+describe("slackMessageToPlain revealing matched URLs", () => {
+  it.each<[string, string[], string]>([
+    ["see <https://x.io/rollout|the doc> now", ["x.io"], "see https://x.io/rollout now"],
+    ["see <https://x.io/rollout|the doc> now", ["X.IO"], "see https://x.io/rollout now"],
+    ["see <https://x.io/rollout|the doc> now", ["other"], "see the doc now"],
+    ["<https://a.io|a> and <https://b.io|b>", ["b.io"], "a and https://b.io"],
+    ["cc <@U1|bob>", ["U1"], "cc @bob"],
+  ])("%j with %j → %j", (input, terms, want) => {
+    expect(slackMessageToPlain(input, terms)).toBe(want)
+  })
+})

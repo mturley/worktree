@@ -902,6 +902,17 @@ describe("EventRow Slack message preview", () => {
     expect(container.textContent).not.toContain("<https://")
   })
 
+  it("shows a matched URL in place of its link label, cut around the hit", () => {
+    // The search matched the link's URL, which the plain text hides behind
+    // its label: the snippet writes the URL out so the hit is visible.
+    const e = slackEvent({ match: { field: "body", snippet: "…<https://x.example/a|the rollout doc>…" } })
+    const { container } = renderWithProvider(
+      <SearchContext.Provider value={{ terms: ["x.example"] }}><EventRow e={e} /></SearchContext.Provider>,
+    )
+    expect(container.textContent).toContain("https://x.example/a")
+    expect(container.textContent).not.toContain("<https://")
+  })
+
   it("leaves a Slack watcher error's body as it is", () => {
     const e = slackEvent({ type: "watcher_error", author: "", body: "slack error: *missing_scope*" })
     const { container } = renderWithProvider(<EventRow e={e} />)

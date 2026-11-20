@@ -3250,10 +3250,12 @@ Worktrees matching through their resources is the single switch
 - `TimelineEvent.match` (`{field, snippet}`): highest-priority field
   containing ANY term, with a ~60 rune `snippet` cut at word boundaries
   (`…`, U+2026, marks cuts). Computed in Go; absent without `q`. Cut from the
-  raw body, so for a GitHub comment (markup and all) `EventRow` cuts it again
-  from the body's plain text with `lib/search.ts`'s `snippet` (first term
-  found wins; a hit only in markup shows the plain text). Matching itself
-  still sees the markup.
+  raw body, so for a GitHub comment or a Slack message (markup and all)
+  `EventRow` cuts it again from the body's plain text with `lib/search.ts`'s
+  `snippet` (first term found wins). A hit only in a Slack link's URL is cut
+  from the text with that URL written in place of its label
+  (`slackMessageToPlain`'s `revealTerms`); any other hit only in markup shows
+  the plain text. Matching itself still sees the markup.
 - `worktreeSummary.notes_search` (via `notes.AllNonBlank`) carries note text
   even when "Show notes on home page" is off; `resourceDTO.reporter` exposes
   the cached Jira reporter name.
