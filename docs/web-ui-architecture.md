@@ -4605,15 +4605,11 @@ following" button.
   `modalOpen()` counts any `aria-modal="true"` element (every Mantine Modal
   and Drawer, nested ones included; never popovers or menus) except the
   follower's own prompt (`data-cmux-follow-prompt`). With one open, the
-  prompt asks "Close modal and follow" (just follows: navigating closes every
-  modal, because the worktree route is keyed by path so each worktree mounts
-  a fresh page, and `SettingsProvider` closes Settings on any pathname
-  change), "Stop following", or "Follow after modal closes", which queues the
-  switch; a `MutationObserver` on `document.body` lands it once no modal is
-  open, through the same rules (already there, unsaved edits, else go). A
-  later cmux switch replaces the queued one without asking; the user
-  navigating, or following turning off, drops it. If something has unsaved
-  edits, the prompt says they will be lost.
+  prompt asks "Stop following cmux" or "Ignore this switch". Neither
+  navigates, so nothing relies on modals closing when the page changes, and
+  an ignored switch is never made later: the next cmux switch is handled
+  afresh (asking again if a modal is still open). A modal in its ~200ms exit
+  transition still counts, which at worst asks once needlessly.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,

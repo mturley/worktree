@@ -106,8 +106,8 @@ function FullApp() {
             <Route path="/" component={HomePage} />
             {/* Keyed by worktree, so switching worktrees mounts a fresh page:
                 its modals (add resource, delete, submit review…) close rather
-                than carry over to the next worktree, which following cmux
-                relies on. A query-only change keeps the page. */}
+                than carry over and act on the next worktree. A query-only
+                change keeps the page. */}
             <Route path="/worktree/:path*">
               {(params) => <WorktreeDetailPage key={params["path*"]} />}
             </Route>

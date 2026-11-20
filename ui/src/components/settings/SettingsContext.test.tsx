@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest"
-import { act, cleanup, render, screen } from "@testing-library/react"
-import { navigate } from "wouter/use-browser-location"
+import { cleanup, render, screen } from "@testing-library/react"
 
 vi.mock("../SettingsModal", () => ({
   SettingsModal: ({ opened, target }: { opened: boolean; target?: { tab: string } }) => (
@@ -8,7 +7,7 @@ vi.mock("../SettingsModal", () => ({
   ),
 }))
 
-import { SettingsProvider, useOpenSettings } from "./SettingsContext"
+import { SettingsProvider } from "./SettingsContext"
 
 const wrap = (url: string) => {
   window.history.replaceState({}, "", url)
@@ -44,29 +43,5 @@ describe("SettingsProvider ?settings deep link", () => {
     wrap("/?home=x")
     expect(modal().dataset.opened).toBe("false")
     expect(window.location.search).toBe("?home=x")
-  })
-})
-
-describe("SettingsProvider and navigation", () => {
-  function Opener() {
-    const open = useOpenSettings()
-    return <button onClick={() => open?.()}>open</button>
-  }
-
-  it("closes when the page changes, so following cmux never leaves it over another worktree", () => {
-    window.history.replaceState({}, "", "/worktree/a")
-    render(<SettingsProvider><Opener /></SettingsProvider>)
-    act(() => screen.getByRole("button", { name: "open" }).click())
-    expect(modal().dataset.opened).toBe("true")
-    act(() => navigate("/worktree/b"))
-    expect(modal().dataset.opened).toBe("false")
-  })
-
-  it("stays open when only the query changes", () => {
-    window.history.replaceState({}, "", "/worktree/a")
-    render(<SettingsProvider><Opener /></SettingsProvider>)
-    act(() => screen.getByRole("button", { name: "open" }).click())
-    act(() => navigate("/worktree/a?resource=x"))
-    expect(modal().dataset.opened).toBe("true")
   })
 })

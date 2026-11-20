@@ -23,8 +23,9 @@ function initialTab(following: boolean, inDiff: boolean): DetailTab {
  * The worktree detail page's details-card tab. Owned by the page rather than
  * the card because the tab decides where the card goes: Notes sits in the
  * resource column, the other tabs span the page under the header. The page
- * isn't remounted between worktrees, so the selection is held per path and
- * starts over (see initialTab) when the path changes.
+ * is remounted for each worktree (the route is keyed by path), so the
+ * selection starts over (see initialTab) on a new worktree; holding it per
+ * path as well keeps that true for any caller that does not remount.
  */
 export function useDetailTab(path: string, inDiff: boolean): { tab: DetailTab; select: (next: DetailTab) => void } {
   const [following] = useFollowCmux()
