@@ -344,31 +344,30 @@ describe("CmuxFollower with a modal open", () => {
   }
   const closeDialog = (name = "dialog") => userEvent.click(screen.getByRole("button", { name: `close ${name}` }))
   const prompt = {
-    close: { name: "Close modal and follow" },
-    stop: { name: "Stop following" },
-    later: { name: "Follow after modal closes" },
+    stop: { name: "Stop following cmux" },
+    ignore: { name: "Ignore this switch" },
   }
+  const tick = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 
   beforeEach(() => act(() => setFollowCmux(true)))
 
   it("asks rather than leaving an open modal", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
+    expect(await screen.findByRole("button", prompt.stop)).toBeInTheDocument()
+    expect(screen.getByRole("button", prompt.ignore)).toBeInTheDocument()
     expect(window.location.pathname).toBe(pageOf(A))
-    expect(await screen.findByRole("button", prompt.close)).toBeInTheDocument()
-    expect(screen.getByRole("button", prompt.stop)).toBeInTheDocument()
-    expect(screen.getByRole("button", prompt.later)).toBeInTheDocument()
   })
 
-  it("Close modal and follow follows", async () => {
-    wrap(<><CmuxFollower /><Dialog /></>)
+  it("asks under nested modals too", async () => {
+    wrap(<><CmuxFollower /><Dialog name="outer"><Dialog name="inner" /></Dialog></>)
+    await closeDialog("inner")
     focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.close))
-    expect(window.location.pathname).toBe(pageOf(B))
-    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
+    expect(await screen.findByRole("button", prompt.ignore)).toBeInTheDocument()
+    expect(window.location.pathname).toBe(pageOf(A))
   })
 
-  it("Stop following stays and turns following off", async () => {
+  it("Stop following cmux stays and turns following off", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
     await userEvent.click(await screen.findByRole("button", prompt.stop))
@@ -376,89 +375,48 @@ describe("CmuxFollower with a modal open", () => {
     expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("false")
   })
 
-  it("Follow after modal closes waits for the modal to close", async () => {
+  it("Ignore this switch stays and keeps following", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    expect(screen.queryByRole("button", prompt.later)).toBeNull()
+    await userEvent.click(await screen.findByRole("button", prompt.ignore))
+    expect(screen.queryByRole("button", prompt.ignore)).toBeNull()
     expect(window.location.pathname).toBe(pageOf(A))
-    await closeDialog()
-    await waitFor(() => expect(window.location.pathname).toBe(pageOf(B)))
+    expect(window.sessionStorage.getItem(FOLLOW_CMUX_KEY)).toBe("true")
   })
 
-  it("waits for nested modals until none is open", async () => {
-    wrap(<><CmuxFollower /><Dialog name="outer"><Dialog name="inner" /></Dialog></>)
+  it("an ignored switch is not made later, when the modal closes", async () => {
+    wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    await closeDialog("inner")
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    await userEvent.click(await screen.findByRole("button", prompt.ignore))
+    await closeDialog()
+    await tick()
     expect(window.location.pathname).toBe(pageOf(A))
-    await closeDialog("outer")
-    await waitFor(() => expect(window.location.pathname).toBe(pageOf(B)))
   })
 
-  it("a later cmux switch replaces the queued one without asking again", async () => {
+  it("after ignoring, the next switch follows once no modal is open", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    focus(C)
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
-    expect(screen.queryByRole("button", prompt.later)).toBeNull()
+    await userEvent.click(await screen.findByRole("button", prompt.ignore))
     await closeDialog()
-    await waitFor(() => expect(window.location.pathname).toBe(pageOf(C)))
-  })
-
-  it("a second switch while asking updates the prompt's target", async () => {
-    wrap(<><CmuxFollower /><Dialog /></>)
-    focus(B)
-    await screen.findByRole("button", prompt.close)
     focus(C)
-    await userEvent.click(screen.getByRole("button", prompt.close))
     expect(window.location.pathname).toBe(pageOf(C))
   })
 
-  it("drops the queued switch when the user navigates", async () => {
-    act(() => setCmuxTwoWaySync(true))
-    vi.spyOn(api, "cmux").mockResolvedValue({ available: false })
+  it("after ignoring, the next switch asks again while the modal is still open", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    act(() => navigate(pageOf(C)))
-    await closeDialog()
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
-    expect(window.location.pathname).toBe(pageOf(C))
-  })
-
-  it("drops the queued switch when following is turned off", async () => {
-    wrap(<><CmuxFollower /><Dialog /></>)
-    focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    act(() => setFollowCmux(false))
-    await closeDialog()
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    await userEvent.click(await screen.findByRole("button", prompt.ignore))
+    focus(C)
+    expect(await screen.findByRole("button", prompt.ignore)).toBeInTheDocument()
     expect(window.location.pathname).toBe(pageOf(A))
   })
 
-  it("says closing discards the modal's unsaved changes", async () => {
-    wrap(<><CmuxFollower /><Dialog><Dirty /></Dialog></>)
-    focus(B)
-    expect(await screen.findByText(/unsaved changes will be lost/i)).toBeInTheDocument()
-  })
-
-  it("does not mention unsaved changes when there are none", async () => {
+  it("a second switch while asking names the latest worktree", async () => {
     wrap(<><CmuxFollower /><Dialog /></>)
     focus(B)
-    await screen.findByRole("button", prompt.close)
-    expect(screen.queryByText(/unsaved changes will be lost/i)).toBeNull()
-  })
-
-  it("asks about unsaved edits again when a queued switch lands on a dirty page", async () => {
-    wrap(<><CmuxFollower /><Dialog /><Dirty /></>)
-    focus(B)
-    await userEvent.click(await screen.findByRole("button", prompt.later))
-    await closeDialog()
-    expect(await screen.findByRole("button", { name: /discard and follow/i })).toBeInTheDocument()
-    expect(window.location.pathname).toBe(pageOf(A))
+    await screen.findByRole("button", prompt.ignore)
+    focus(C)
+    expect(await screen.findByText("c")).toBeInTheDocument()
   })
 })
 
