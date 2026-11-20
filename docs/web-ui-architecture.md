@@ -4613,6 +4613,17 @@ following" button.
   each first checks the tab is still on its worktree, so a quick A → B → C
   sends only C's. With it off, leaving a worktree page still turns following
   off.
+- **No worktree:** the `cmux_focus` message (stream and `/api/cmux/focused`)
+  also carries the workspace's `title` (`DisplayTitle`) and `color`
+  (`custom_color` or ""), since `/api/cmux` lists only workspaces matching a
+  worktree. `lib/cmuxFocusBus.ts` keeps the last message
+  (`useLastCmuxFocus`); while it names a workspace with no worktree,
+  `FollowingCmuxBanner` turns yellow and reads "Following cmux: ▍{workspace}
+  has no worktree, staying on ⎇{worktree}." ("Synced with cmux:" with
+  two-way sync; "staying here." off the worktree pages). A page loaded
+  already following has seen no message, so the banner asks `/focused` once
+  and records the answer with `recordCmuxFocus`, which never reaches the
+  follower, so the tab does not move.
 - **Open modals:** a switch never pulls the tab out from under a modal.
   `modalOpen()` counts any `aria-modal="true"` element (every Mantine Modal
   and Drawer, nested ones included; never popovers or menus) except the

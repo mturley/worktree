@@ -13,6 +13,7 @@ import (
 
 func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 	t.Parallel()
+	purple := "#7048E8"
 	conn := unreadTestDB(t)
 	wt := testgit.Worktree(t)
 	if err := registerWorktreeForTest(t, conn, wt); err != nil {
@@ -20,8 +21,8 @@ func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 	}
 	s := &Server{DB: conn, cmuxAvailable: func() bool { return true }, cmuxList: func() ([]cmux.Workspace, error) {
 		return []cmux.Workspace{
-			{ID: "W1", CurrentDirectory: wt},
-			{ID: "W2", CurrentDirectory: t.TempDir()},
+			{ID: "W1", CurrentDirectory: wt, Title: "wt-one"},
+			{ID: "W2", CurrentDirectory: t.TempDir(), Ref: "workspace:2", Title: "notes-scratch", CustomColor: &purple},
 		}, nil
 	}}
 	focus, done := s.focusHub().subscribe()
@@ -39,8 +40,8 @@ func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 	}
 
 	s.onCmuxFocus("W1")
-	if m := next(); m.WorkspaceID != "W1" || m.Path != wt {
-		t.Errorf("W1: got %+v, want path %q", m, wt)
+	if m := next(); m.WorkspaceID != "W1" || m.Path != wt || m.Title != "wt-one" || m.Color != "" {
+		t.Errorf("W1: got %+v, want path %q, title wt-one, no color", m, wt)
 	}
 
 	// Refocusing the same workspace (cmux coming forward) is not a change.
@@ -48,13 +49,15 @@ func TestCmuxFocusPublishesMatchingWorktree(t *testing.T) {
 	// A workspace on no registered worktree still reports, with no path, so
 	// a following tab knows focus left the worktree it is showing.
 	s.onCmuxFocus("W2")
-	if m := next(); m.WorkspaceID != "W2" || m.Path != "" {
-		t.Errorf("W2: got %+v, want empty path", m)
+	// It carries the workspace's name and colour: the UI cannot look up a
+	// workspace with no worktree, and its banner names it.
+	if m := next(); m.WorkspaceID != "W2" || m.Path != "" || m.Title != "notes-scratch" || m.Color != purple {
+		t.Errorf("W2: got %+v, want empty path, title notes-scratch, color %s", m, purple)
 	}
 	// Unknown to the listing: no path rather than a guess.
 	s.onCmuxFocus("W9")
-	if m := next(); m.WorkspaceID != "W9" || m.Path != "" {
-		t.Errorf("W9: got %+v, want empty path", m)
+	if m := next(); m.WorkspaceID != "W9" || m.Path != "" || m.Title != "" {
+		t.Errorf("W9: got %+v, want empty path and title", m)
 	}
 	select {
 	case m := <-focus:
@@ -137,10 +140,16 @@ func TestCmuxFocusedReportsSelectedWorkspace(t *testing.T) {
 		t.Errorf("got %+v, want W2 at %q", m, wt)
 	}
 
-	// Selected workspace on no registered worktree: the ID, no path.
-	listing = []cmux.Workspace{{ID: "W1", CurrentDirectory: t.TempDir(), Selected: true}}
-	if m := get(); m.WorkspaceID != "W1" || m.Path != "" {
-		t.Errorf("got %+v, want W1 with no path", m)
+	// Selected workspace on no registered worktree: the ID, its name and
+	// colour, no path. An untitled one falls back to its ref.
+	purple := "#7048E8"
+	listing = []cmux.Workspace{{ID: "W1", CurrentDirectory: t.TempDir(), Selected: true, Title: "notes-scratch", CustomColor: &purple}}
+	if m := get(); m.WorkspaceID != "W1" || m.Path != "" || m.Title != "notes-scratch" || m.Color != purple {
+		t.Errorf("got %+v, want W1 named notes-scratch with no path", m)
+	}
+	listing = []cmux.Workspace{{ID: "W1", Ref: "workspace:1", CurrentDirectory: t.TempDir(), Selected: true}}
+	if m := get(); m.Title != "workspace:1" {
+		t.Errorf("got %+v, want the ref as title", m)
 	}
 
 	s.cmuxAvailable = func() bool { return false }

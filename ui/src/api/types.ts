@@ -372,6 +372,10 @@ export type NotifyMode = "cmux" | "browser"
 export interface CmuxFocusMsg {
   workspace_id: string
   path: string
+  /** The workspace's name and custom colour ("" when unset). Optional: an
+   *  older server sends neither. */
+  title?: string
+  color?: string
 }
 
 /** The `notification` stream message: shown by exactly one tab per session. */
