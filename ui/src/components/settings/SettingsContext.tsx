@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useLocation } from "wouter"
 import type { CredService } from "../../api/types"
 import { SettingsModal } from "../SettingsModal"
 
@@ -37,6 +38,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const rest = params.toString()
     window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? "?" + rest : "") + window.location.hash)
   }, [open])
+  // Any change of page closes it: it is app-level, so nothing else would,
+  // and following cmux promises that switching worktrees closes every modal.
+  // wouter's location is the pathname, so a query-only change keeps it open.
+  const [location] = useLocation()
+  const lastLocation = useRef(location)
+  useEffect(() => {
+    if (lastLocation.current === location) return
+    lastLocation.current = location
+    setOpened(false)
+  }, [location])
   return (
     <Ctx.Provider value={value}>
       {children}

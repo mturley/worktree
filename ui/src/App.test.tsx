@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, render, screen } from "@testing-library/react"
+import { navigate } from "wouter/use-browser-location"
 import userEvent from "@testing-library/user-event"
 import { MantineProvider } from "@mantine/core"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 vi.mock("./pages/HomePage", () => ({ HomePage: () => <div>home page</div> }))
-vi.mock("./pages/WorktreeDetailPage", () => ({ WorktreeDetailPage: () => <div>detail page</div> }))
+// Counts mounts, so a test can tell a fresh page from a re-rendered one.
+const { detailMounts } = vi.hoisted(() => ({ detailMounts: { n: 0 } }))
+vi.mock("./pages/WorktreeDetailPage", async () => {
+  const { useState } = await import("react")
+  return {
+    WorktreeDetailPage: () => {
+      const [mount] = useState(() => ++detailMounts.n)
+      return <div>detail page {mount}</div>
+    },
+  }
+})
 vi.mock("./components/HomeWorktreeBanner", () => ({ HomeWorktreeBanner: () => null }))
 // vi.mock factories are hoisted above this file's declarations, so the spy
 // must be hoisted with them.
@@ -97,7 +108,7 @@ describe("App authentication gate", () => {
     renderApp()
     await userEvent.type(await screen.findByLabelText("Password"), "right")
     await userEvent.click(screen.getByRole("button", { name: "Log in" }))
-    expect(await screen.findByText("detail page")).toBeInTheDocument()
+    expect(await screen.findByText(/^detail page/)).toBeInTheDocument()
   })
 
   it("returns to the login screen when a request reports the session gone", async () => {
@@ -194,5 +205,27 @@ describe("macOS bridge messages", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe("App worktree pages", () => {
+  it("mounts a fresh page for each worktree, so its modals close on a switch", async () => {
+    window.history.replaceState({}, "", "/worktree/%2Fwt%2Fa")
+    mockServer({ "GET /api/session": () => ({ status: 200, body: session }) })
+    detailMounts.n = 0
+    renderApp()
+    expect(await screen.findByText("detail page 1")).toBeInTheDocument()
+    act(() => navigate("/worktree/%2Fwt%2Fb"))
+    expect(await screen.findByText("detail page 2")).toBeInTheDocument()
+  })
+
+  it("keeps the page when only the query changes", async () => {
+    window.history.replaceState({}, "", "/worktree/%2Fwt%2Fa")
+    mockServer({ "GET /api/session": () => ({ status: 200, body: session }) })
+    detailMounts.n = 0
+    renderApp()
+    expect(await screen.findByText("detail page 1")).toBeInTheDocument()
+    act(() => navigate("/worktree/%2Fwt%2Fa?resource=x"))
+    expect(screen.getByText("detail page 1")).toBeInTheDocument()
   })
 })

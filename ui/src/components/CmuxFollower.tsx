@@ -86,6 +86,30 @@ export function worktreeAt(location: string): string | null {
   }
 }
 
+/** Marks this component's own prompt, which never counts as "a modal open". */
+const PROMPT_ATTR = "data-cmux-follow-prompt"
+
+/**
+ * Whether any modal is open, other than the follower's own prompt. Every
+ * Mantine Modal and Drawer marks its content `aria-modal="true"` while
+ * mounted; popovers, menus and tooltips do not, so they never count. Nested
+ * modals are just more of them: "none open" means all of them closed.
+ */
+export function modalOpen(): boolean {
+  for (const el of document.querySelectorAll('[aria-modal="true"]')) {
+    if (!el.closest(`[${PROMPT_ATTR}]`)) return true
+  }
+  return false
+}
+
+interface Pending {
+  path: string
+  /** Asked because a modal is open, rather than over unsaved edits. */
+  modal: boolean
+  /** Something had unsaved edits when asked. */
+  dirty: boolean
+}
+
 /**
  * Moves a tab with "Follow cmux" on to the worktree cmux just switched
  * to. Rendered once, inside the Router, on every page.
@@ -102,6 +126,13 @@ export function worktreeAt(location: string): string | null {
  * switches cmux to that worktree's workspace instead, and a move anywhere
  * else (the home page, to pick the next worktree) leaves cmux alone. Either
  * way following stays on. See TWO_WAY_GUARD_MS for the one wrinkle.
+ *
+ * A switch never pulls the tab out from under an open modal: it asks
+ * instead ("Close modal and follow" — navigating closes them, see the keyed
+ * worktree route and SettingsProvider; "Stop following"; "Follow after
+ * modal closes", which queues the switch until no modal is open, a later
+ * cmux switch replacing it without asking again). The user navigating, or
+ * turning following off, drops a queued switch.
  */
 export function CmuxFollower() {
   const [follow, setFollow] = useFollowCmux()
@@ -110,9 +141,17 @@ export function CmuxFollower() {
   const guardRef = useRef<Guard | null>(null)
   const queueRef = useRef<Promise<void>>(Promise.resolve())
   const [location, navigate] = useLocation()
-  // The worktree a focus change wants to open while the unsaved-changes
-  // prompt is up; the latest change wins.
-  const [pending, setPending] = useState<string | null>(null)
+  // The worktree a focus change wants to open while the prompt is up; the
+  // latest change wins.
+  const [pending, setPending] = useState<Pending | null>(null)
+  // A switch waiting for every modal to close ("Follow after modal closes").
+  // Mirrored in a ref for the focus subscription, which is not rebuilt.
+  const [queued, setQueuedState] = useState<string | null>(null)
+  const queuedRef = useRef<string | null>(null)
+  const setQueued = (path: string | null) => {
+    queuedRef.current = path
+    setQueuedState(path)
+  }
   // The Router's navigate is a fresh function each render; a ref keeps the
   // focus subscription from being torn down and rebuilt on every one.
   const navigateRef = useRef(navigate)
@@ -127,9 +166,35 @@ export function CmuxFollower() {
     navigateRef.current(`${PREFIX}${encodeURIComponent(path)}`)
   }
 
+  // Where a switch to `path` goes: nowhere if already there, a queued switch
+  // replaced while a modal is still open, a prompt over a modal or unsaved
+  // edits, else straight there.
+  const consider = (path: string) => {
+    if (worktreeAt(window.location.pathname) === path) {
+      // Already here (e.g. the page's own "Switch cmux" button).
+      setPending(null)
+      setQueued(null)
+      return
+    }
+    if (modalOpen()) {
+      if (queuedRef.current !== null) setQueued(path)
+      else setPending({ path, modal: true, dirty: hasUnsavedChanges() })
+      return
+    }
+    setQueued(null)
+    if (hasUnsavedChanges()) {
+      setPending({ path, modal: false, dirty: true })
+      return
+    }
+    go(path)
+  }
+  const considerRef = useRef(consider)
+  considerRef.current = consider
+
   useEffect(() => {
     if (!follow) {
       setPending(null)
+      setQueued(null)
       return
     }
     return onCmuxFocus((msg) => {
@@ -141,18 +206,25 @@ export function CmuxFollower() {
         else if (Date.now() < guard.until) return
         else guardRef.current = null
       }
-      if (worktreeAt(window.location.pathname) === msg.path) {
-        // Already here (e.g. the page's own "Switch cmux" button).
-        setPending(null)
-        return
-      }
-      if (hasUnsavedChanges()) {
-        setPending(msg.path)
-        return
-      }
-      go(msg.path)
+      considerRef.current(msg.path)
     })
   }, [follow])
+
+  // A queued switch lands once no modal is open: watched on the DOM, since
+  // modals come and go without telling anyone.
+  useEffect(() => {
+    if (queued === null) return
+    const check = () => {
+      if (modalOpen()) return
+      const to = queuedRef.current
+      setQueued(null)
+      if (to) considerRef.current(to)
+    }
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { childList: true, subtree: true })
+    check()
+    return () => observer.disconnect()
+  }, [queued])
 
   useEffect(() => {
     const from = worktreeAt(prevLocation.current)
@@ -163,6 +235,8 @@ export function CmuxFollower() {
     const expected = expectedRef.current
     expectedRef.current = null
     if (!follow || (expected !== null && to === expected)) return
+    // The user chose where to be: a switch waiting on a modal is stale now.
+    setQueued(null)
     if (twoWay) {
       if (to !== null) void selectWorkspaceFor(qc, to, guardRef, queueRef)
       return
@@ -172,14 +246,25 @@ export function CmuxFollower() {
 
   // Navigating some other way while the prompt is up answers it.
   useEffect(() => {
-    if (pending !== null && worktreeAt(location) === pending) setPending(null)
+    if (pending !== null && worktreeAt(location) === pending.path) setPending(null)
   }, [location, pending])
+
+  const target = pending && <b><WorktreeGlyph /><span>{worktreeName(pending.path)}</span></b>
+  const follow_ = () => {
+    const to = pending?.path
+    setPending(null)
+    if (to) go(to)
+  }
+  const stop = () => {
+    setPending(null)
+    setFollow(false)
+  }
 
   return (
     <Modal
       opened={pending !== null}
       onClose={() => {}}
-      title="Unsaved changes"
+      title={pending?.modal ? "A modal is open" : "Unsaved changes"}
       centered
       // A choice is required: dismissing would leave following on, and the
       // next switch would only ask again.
@@ -189,34 +274,41 @@ export function CmuxFollower() {
       // Above any modal the page has open: that is often where the unsaved
       // edits are, and its overlay would otherwise swallow these buttons.
       zIndex={1000}
+      {...{ [PROMPT_ATTR]: true }}
     >
-      <Stack gap="md">
-        <Text size="sm">
-          cmux switched to <b>{pending && <><WorktreeGlyph /><span>{worktreeName(pending)}</span></>}</b>, but this page has unsaved
-          changes. Following cmux will discard them.
-        </Text>
-        <Group justify="flex-end" gap="xs">
-          <Button
-            variant="default"
-            onClick={() => {
-              setPending(null)
-              setFollow(false)
-            }}
-          >
-            Stay and stop following
-          </Button>
-          <Button
-            color="red"
-            onClick={() => {
-              const to = pending
-              setPending(null)
-              if (to) go(to)
-            }}
-          >
-            Discard and follow
-          </Button>
-        </Group>
-      </Stack>
+      {pending?.modal ? (
+        <Stack gap="md">
+          <Text size="sm">
+            cmux switched to {target}, but a modal is open here. Following now closes it
+            {pending.dirty ? ", and its unsaved changes will be lost." : "."}
+          </Text>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={stop}>Stop following</Button>
+            <Button
+              variant="default"
+              onClick={() => {
+                const to = pending.path
+                setPending(null)
+                setQueued(to)
+              }}
+            >
+              Follow after modal closes
+            </Button>
+            <Button color={pending.dirty ? "red" : undefined} onClick={follow_}>Close modal and follow</Button>
+          </Group>
+        </Stack>
+      ) : (
+        <Stack gap="md">
+          <Text size="sm">
+            cmux switched to {target}, but this page has unsaved
+            changes. Following cmux will discard them.
+          </Text>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={stop}>Stay and stop following</Button>
+            <Button color="red" onClick={follow_}>Discard and follow</Button>
+          </Group>
+        </Stack>
+      )}
     </Modal>
   )
 }

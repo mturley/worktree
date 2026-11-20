@@ -4601,6 +4601,19 @@ following" button.
   each first checks the tab is still on its worktree, so a quick A → B → C
   sends only C's. With it off, leaving a worktree page still turns following
   off.
+- **Open modals:** a switch never pulls the tab out from under a modal.
+  `modalOpen()` counts any `aria-modal="true"` element (every Mantine Modal
+  and Drawer, nested ones included; never popovers or menus) except the
+  follower's own prompt (`data-cmux-follow-prompt`). With one open, the
+  prompt asks "Close modal and follow" (just follows: navigating closes every
+  modal, because the worktree route is keyed by path so each worktree mounts
+  a fresh page, and `SettingsProvider` closes Settings on any pathname
+  change), "Stop following", or "Follow after modal closes", which queues the
+  switch; a `MutationObserver` on `document.body` lands it once no modal is
+  open, through the same rules (already there, unsaved edits, else go). A
+  later cmux switch replaces the queued one without asking; the user
+  navigating, or following turning off, drops it. If something has unsaved
+  edits, the prompt says they will be lost.
 - **Unsaved changes:** components holding typed-but-unsent input register
   through `useUnsavedChanges(isDirty)` (`lib/unsavedChanges.ts`): the Slack
   composer and the add-resource, new-worktree, create-workspace,
