@@ -112,7 +112,7 @@ c. If `complete` is false, fewer replies are cached than Slack reported: say so.
 ## Drill-downs
 
 **What happened since yesterday (standup):** `worktree activity --since 24h --json`.
-Narrow with `--unread`, `--source github` (or `jira`, `slack`, `tasks`),
+Narrow with `--unread`, `--source github` (or `jira`, `slack`, `tasks`, `links`),
 `--worktree .`, `--resource <url>` and `--limit`. Use `--since 72h` after a weekend.
 
 **Find X** (a PR, Jira issue, Slack thread, task, or "what did Andrew say"): see

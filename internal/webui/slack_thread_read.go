@@ -51,14 +51,19 @@ type SlackMessage struct {
 	Synthesized bool   `json:"synthesized"`
 }
 
+// maxAmbiguousCandidates caps the candidates an ambiguous name lists; Total
+// carries the true count.
+const maxAmbiguousCandidates = 10
+
 // AmbiguousThreadError: a name matched several threads.
 type AmbiguousThreadError struct {
 	Name       string
+	Total      int // every thread that matched; Candidates holds at most maxAmbiguousCandidates
 	Candidates []SlackThreadSummary
 }
 
 func (e *AmbiguousThreadError) Error() string {
-	return fmt.Sprintf("ambiguous: %d threads match %q", len(e.Candidates), e.Name)
+	return fmt.Sprintf("ambiguous: %d threads match %q", e.Total, e.Name)
 }
 
 // ErrThreadNotFound: nothing followed or archived matches the reference.
@@ -196,8 +201,11 @@ func (s *Server) ResolveSlackThread(ref string) (string, error) {
 	case 1:
 		return pick[0].ID, nil
 	}
-	amb := &AmbiguousThreadError{Name: ref}
+	amb := &AmbiguousThreadError{Name: ref, Total: len(pick)}
 	for _, c := range pick {
+		if len(amb.Candidates) >= maxAmbiguousCandidates {
+			break
+		}
 		amb.Candidates = append(amb.Candidates, baseSlackSummary(c))
 	}
 	return "", amb

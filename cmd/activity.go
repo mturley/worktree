@@ -174,7 +174,7 @@ func init() {
 	f.StringVar(&activityResource, "resource", "", "only this resource: a URL or <type>:<id> (pr, jira, slack, link)")
 	f.StringVar(&activitySince, "since", "", "only events since a duration ago (24h, 7d) or an RFC 3339 time")
 	f.BoolVar(&activityUnread, "unread", false, "only unread events (exit 1 when there are none)")
-	f.StringArrayVar(&activitySources, "source", nil, "only this source: github, jira, slack or tasks (repeatable)")
+	f.StringArrayVar(&activitySources, "source", nil, "only this source: github, jira, slack, tasks or links (repeatable)")
 	f.IntVar(&activityLimit, "limit", 50, "maximum number of events")
 	f.BoolVar(&activityJSON, "json", false, `print {"schema_version": 1, "events": [...]}`)
 	activityMarkReadCmd.Flags().BoolVar(&activityMarkUndo, "undo", false, "take the mark back: the event reads as it would without it")

@@ -152,10 +152,17 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// visibleFields is the Go twin of VISIBLE_FIELDS in ui/src/lib/search.ts:
+// fields already shown as the row's label, so they get no "why" (a match
+// through a resource still explains itself). Keep the two identical.
+var visibleFields = map[string]bool{
+	"title": true, "name": true, "key": true, "branch": true, "repo": true, "workspace": true,
+}
+
 // matchWhy words a hit's match: "via <key>" for a worktree matched through a
 // resource, else "field: snippet". Dimmed, so nothing prints ANSI when piped.
 func matchWhy(m *webui.SearchMatch) string {
-	if m == nil {
+	if m == nil || (m.ViaKey == "" && visibleFields[m.Field]) {
 		return ""
 	}
 	why := m.Field + ": " + m.Snippet

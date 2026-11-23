@@ -24,6 +24,9 @@ func headlessServer(conn *sql.DB) (*webui.Server, error) {
 		off[svc] = !cfg.Watchers.Enabled(svc)
 	}
 	srv.SetWatchersDisabled(off)
+	// The search shells out to cmux only while this is off; ui.cmux_features_disabled
+	// is as binding for the CLI as for the server.
+	srv.SetCmuxFeaturesDisabled(cfg.UI.CmuxFeaturesDisabled)
 	return srv, nil
 }
 

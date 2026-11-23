@@ -29,7 +29,7 @@ var slackThreadCmd = &cobra.Command{
 	Use:   "thread <ref>",
 	Short: "Show a cached Slack thread: its summary, and with --messages its messages",
 	Long: "Show one followed Slack thread, read from the local cache. <ref> is a Slack URL,\n" +
-		"slack:<channel>:<ts>, or a name (custom name, title or channel) matching one thread.\n\n" +
+		"slack:<channel>:<ts>, or a name (custom name or title) matching one thread.\n\n" +
 		"By default only the summary is printed, so candidates can be shown before the full\n" +
 		"messages are read; --messages adds them. Nothing contacts Slack and nothing is\n" +
 		"marked read.\n\n" +
@@ -66,12 +66,15 @@ func runSlackThread(cmd *cobra.Command, args []string) error {
 	switch {
 	case errors.As(err, &amb):
 		if slackThreadJSON {
-			if err := printJSON(out, map[string]any{"ambiguous": true, "candidates": amb.Candidates}); err != nil {
+			if err := printJSON(out, map[string]any{"ambiguous": true, "total": amb.Total, "candidates": amb.Candidates}); err != nil {
 				return err
 			}
 		} else {
 			for _, c := range amb.Candidates {
 				fmt.Fprintf(out, "%s  %s  %s\n", c.ID, threadLabel(c), c.URL)
+			}
+			if amb.Total > len(amb.Candidates) {
+				fmt.Fprintf(out, "... and %d more; use a more specific name\n", amb.Total-len(amb.Candidates))
 			}
 		}
 		return printed(err)

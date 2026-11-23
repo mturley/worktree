@@ -260,3 +260,19 @@ func TestFirstMessageExcerptBound(t *testing.T) {
 		t.Errorf("short: %q", got)
 	}
 }
+
+func TestResolveSlackThreadAmbiguousCapsCandidates(t *testing.T) {
+	t.Parallel()
+	s, conn, wt := slackFixture(t)
+	for i := 0; i < maxAmbiguousCandidates+3; i++ {
+		followSlack(t, conn, wt, fmt.Sprintf("C1:17000000%02d.000100", i), fmt.Sprintf(`{"title":"Rollout %d"}`, i))
+	}
+	_, err := s.ResolveSlackThread("rollout")
+	var amb *AmbiguousThreadError
+	if !errors.As(err, &amb) || len(amb.Candidates) != maxAmbiguousCandidates || amb.Total != maxAmbiguousCandidates+3 {
+		t.Fatalf("got %v", err)
+	}
+	if want := fmt.Sprintf(`ambiguous: %d threads match "rollout"`, maxAmbiguousCandidates+3); err.Error() != want {
+		t.Errorf("message %q, want %q", err.Error(), want)
+	}
+}
