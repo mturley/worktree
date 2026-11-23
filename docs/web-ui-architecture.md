@@ -3281,6 +3281,12 @@ priority order above are the CLI's too. `--archived` adds
 `--worktree`. Hits carry `field`/`snippet` (and `via_key`/`via_field`) but
 never an event body.
 
+One deliberate divergence from the UI: `--source` narrows a worktree's
+via-resources in both, but the UI also drops a worktree card that follows
+nothing of the selected sources. The CLI keeps it, so `worktree search
+--source slack <term>` can return a worktree matched only on its branch, repo,
+name or notes.
+
 The Go matchers and `ui/src/lib/search.ts` must agree. Both read one fixture,
 `ui/src/lib/testdata/search-parity.json`, from `TestSearchParityFixture`
 (`search_match_test.go`) and `searchParity.test.ts`. A new matching rule goes

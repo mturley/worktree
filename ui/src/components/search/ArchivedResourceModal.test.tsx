@@ -27,9 +27,9 @@ afterEach(cleanup)
 describe("ArchivedResourceModal", () => {
   it("shows the resource, where it was last followed, and an Open link", () => {
     wrap()
-    // A PR row (ResourceCardBody) names itself by its title; the custom name is not shown.
+    // A PR row (ResourceCardBody) names itself by its title; the modal adds the custom name.
     expect(screen.getByText("Retired work")).toBeInTheDocument()
-    expect(screen.queryByText("Mine")).toBeNull()
+    expect(screen.getByText("Mine")).toBeInTheDocument()
     expect(screen.getByText(/Last followed in/)).toHaveTextContent("old-branch")
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "https://gh/pr/7")
   })

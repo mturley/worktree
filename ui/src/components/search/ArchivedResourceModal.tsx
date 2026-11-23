@@ -25,6 +25,12 @@ export function ArchivedResourceModal({ r, onFollow, onClose }: {
           <Paper p="xs" withBorder>
             <ResourceCardBody r={r} />
           </Paper>
+          {r.custom_name && (
+            <Text size="sm">
+              <Text span c="dimmed">Custom name: </Text>
+              {r.custom_name}
+            </Text>
+          )}
           <Text size="sm" c="dimmed">
             No worktree follows this resource any more.
             {last.length > 0 && (

@@ -309,7 +309,7 @@ export function HomePage() {
         if (followers.length > 1) setChoosing({ r, worktrees: followers })
         else if (p) openResourceIn(p, r)
       },
-      archivedResource: (r) => setArchivedPick(archivedResources.data?.find((x) => x.type === r.type && x.id === r.id) ?? null),
+      archivedResource: (r) => setArchivedPick(archivedResources.data?.find((x) => x.type === r.type && x.id === r.id) ?? { worktrees: [], ...r }),
       // An archived or worktree-less event opens its details; see pickEvent.
       event: activity.pickEvent,
       // Goes to the task's worktree, as a picked event does; see pickTask.

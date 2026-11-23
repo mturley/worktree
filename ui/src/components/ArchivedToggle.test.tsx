@@ -48,7 +48,7 @@ describe("ArchivedToggle", () => {
 
     await waitFor(() => {
       expect(document.body.textContent).toContain(
-        "Include activity from resources that are no longer being followed by a worktree",
+        "Include archived: activity, and in the search dropdown resources and tasks, from resources that are no longer being followed by a worktree",
       )
     })
   })
