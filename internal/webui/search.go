@@ -16,6 +16,12 @@ import (
 type searchMatch struct {
 	Field   string `json:"field"`
 	Snippet string `json:"snippet"`
+	// For a worktree matched through one of its resources (search_match.go):
+	// that resource's short key, type and id, and which of its fields hit.
+	ViaKey   string `json:"via_key,omitempty"`
+	ViaType  string `json:"via_type,omitempty"`
+	ViaID    string `json:"via_id,omitempty"`
+	ViaField string `json:"via_field,omitempty"`
 }
 
 func parseSearchTerms(q string) []string {

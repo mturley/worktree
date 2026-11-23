@@ -1,0 +1,361 @@
+{
+ "cases": [
+  {
+   "name": "key-exact",
+   "kind": "resource",
+   "query": "#12",
+   "rank": 0,
+   "item": {
+    "type": "pr",
+    "id": "o/r#12",
+    "url": "https://github.com/o/r/pull/12",
+    "title": "Fix the thing"
+   },
+   "want": {
+    "field": "key",
+    "snippet": "o/r#12\n#12\n"
+   }
+  },
+  {
+   "name": "title-prefix",
+   "kind": "resource",
+   "query": "fix",
+   "rank": 1,
+   "item": {
+    "type": "pr",
+    "id": "o/r#13",
+    "url": "u",
+    "title": "Fix the thing"
+   },
+   "want": {
+    "field": "title",
+    "snippet": "Fix the thing"
+   }
+  },
+  {
+   "name": "custom-name",
+   "kind": "resource",
+   "query": "nickname",
+   "rank": 1,
+   "item": {
+    "type": "pr",
+    "id": "o/r#14",
+    "url": "u",
+    "title": "Other",
+    "custom_name": "Nickname here"
+   },
+   "want": {
+    "field": "name",
+    "snippet": "Nickname here"
+   }
+  },
+  {
+   "name": "jira-reporter",
+   "kind": "resource",
+   "query": "zoe",
+   "item": {
+    "type": "jira",
+    "id": "RHOAIENG-1",
+    "url": "u",
+    "title": "Epic",
+    "reporter": "Zoe Smith",
+    "assignee": "Al",
+    "status": "Open"
+   },
+   "want": {
+    "field": "reporter",
+    "snippet": "Zoe Smith"
+   }
+  },
+  {
+   "name": "status-falls-back-to-state",
+   "kind": "resource",
+   "query": "merged",
+   "item": {
+    "type": "pr",
+    "id": "o/r#15",
+    "url": "u",
+    "title": "T",
+    "state": "merged"
+   },
+   "want": {
+    "field": "status",
+    "snippet": "merged"
+   }
+  },
+  {
+   "name": "labels",
+   "kind": "resource",
+   "query": "backend",
+   "item": {
+    "type": "jira",
+    "id": "RHOAIENG-2",
+    "url": "u",
+    "title": "T",
+    "labels": [
+     "frontend",
+     "backend"
+    ]
+   },
+   "want": {
+    "field": "labels",
+    "snippet": "frontend, backend"
+   }
+  },
+  {
+   "name": "long-description-snippet",
+   "kind": "resource",
+   "query": "migration",
+   "item": {
+    "type": "jira",
+    "id": "RHOAIENG-3",
+    "url": "u",
+    "title": "T",
+    "description": "The quick brown fox jumps over the lazy dog while the migration of the cluster nodes proceeds slowly and the operators watch carefully for any sign of trouble tonight"
+   },
+   "want": {
+    "field": "description",
+    "snippet": "…over the lazy dog while the migration of the cluster nodes proceeds…"
+   }
+  },
+  {
+   "name": "all-terms-across-fields",
+   "kind": "resource",
+   "query": "zoe open",
+   "item": {
+    "type": "jira",
+    "id": "RHOAIENG-4",
+    "url": "u",
+    "title": "T",
+    "reporter": "Zoe Smith",
+    "status": "Open"
+   },
+   "want": {
+    "field": "reporter",
+    "snippet": "Zoe Smith"
+   }
+  },
+  {
+   "name": "one-term-missing",
+   "kind": "resource",
+   "query": "zoe nobody",
+   "item": {
+    "type": "jira",
+    "id": "RHOAIENG-5",
+    "url": "u",
+    "title": "T",
+    "reporter": "Zoe Smith"
+   },
+   "want": null
+  },
+  {
+   "name": "link-url",
+   "kind": "resource",
+   "query": "example.com/page",
+   "item": {
+    "type": "link",
+    "id": "https://www.example.com/page",
+    "url": "https://www.example.com/page",
+    "title": "A page"
+   },
+   "want": {
+    "field": "key",
+    "snippet": "https://www.example.com/page\nexample.com\n"
+   }
+  },
+  {
+   "name": "link-url-only",
+   "kind": "resource",
+   "query": "?ref=1",
+   "item": {
+    "type": "link",
+    "id": "L1",
+    "url": "https://example.com/page?ref=1",
+    "title": "A page"
+   },
+   "want": {
+    "field": "url",
+    "snippet": "https://example.com/page?ref=1"
+   }
+  },
+  {
+   "name": "slack-channel-key",
+   "kind": "resource",
+   "query": "general",
+   "item": {
+    "type": "slack",
+    "id": "C1:1700000000.000100",
+    "url": "u",
+    "channel_name": "general",
+    "title": "Hello"
+   },
+   "want": {
+    "field": "key",
+    "snippet": "C1:1700000000.000100\n\ngeneral"
+   }
+  },
+  {
+   "name": "task-ref",
+   "kind": "task",
+   "query": "t8",
+   "rank": 0,
+   "item": {
+    "id": 8,
+    "ref": "T8",
+    "title": "Write docs",
+    "description": ""
+   },
+   "want": {
+    "field": "ref",
+    "snippet": "T8"
+   }
+  },
+  {
+   "name": "task-description",
+   "kind": "task",
+   "query": "rollout",
+   "rank": 3,
+   "item": {
+    "id": 9,
+    "ref": "T9",
+    "title": "Write docs",
+    "description": "Plan the rollout carefully"
+   },
+   "want": {
+    "field": "description",
+    "snippet": "Plan the rollout carefully"
+   }
+  },
+  {
+   "name": "worktree-branch",
+   "kind": "worktree",
+   "query": "feat",
+   "rank": 1,
+   "item": {
+    "path": "/home/u/.worktrees/repo/feat-x",
+    "branch": "feat-x",
+    "repo": "repo"
+   },
+   "resources": [],
+   "workspace_titles": [],
+   "want": {
+    "field": "branch",
+    "snippet": "feat-x"
+   }
+  },
+  {
+   "name": "worktree-name",
+   "kind": "worktree",
+   "query": "checkout",
+   "item": {
+    "path": "/home/u/.worktrees/repo/checkout-dir",
+    "branch": "b",
+    "repo": "repo"
+   },
+   "resources": [],
+   "workspace_titles": [],
+   "want": {
+    "field": "name",
+    "snippet": "checkout-dir"
+   }
+  },
+  {
+   "name": "worktree-workspace",
+   "kind": "worktree",
+   "query": "scratch",
+   "item": {
+    "path": "/p/w",
+    "branch": "b",
+    "repo": "repo"
+   },
+   "resources": [],
+   "workspace_titles": [
+    "Scratch pad"
+   ],
+   "want": {
+    "field": "workspace",
+    "snippet": "Scratch pad"
+   }
+  },
+  {
+   "name": "worktree-notes",
+   "kind": "worktree",
+   "query": "remember",
+   "item": {
+    "path": "/p/w",
+    "branch": "b",
+    "repo": "repo",
+    "notes_search": "Please remember to rebase"
+   },
+   "resources": [],
+   "workspace_titles": [],
+   "want": {
+    "field": "notes",
+    "snippet": "Please remember to rebase"
+   }
+  },
+  {
+   "name": "worktree-via-resource",
+   "kind": "worktree",
+   "query": "gadget",
+   "item": {
+    "path": "/p/w",
+    "branch": "b",
+    "repo": "repo"
+   },
+   "resources": [
+    {
+     "type": "pr",
+     "id": "o/r#12",
+     "url": "u",
+     "title": "Gadget fix"
+    }
+   ],
+   "workspace_titles": [],
+   "want": {
+    "field": "resource",
+    "snippet": "Gadget fix",
+    "via_key": "#12",
+    "via_field": "title"
+   }
+  },
+  {
+   "name": "worktree-terms-split-own-and-resource",
+   "kind": "worktree",
+   "query": "feat gadget",
+   "item": {
+    "path": "/p/w",
+    "branch": "feat-x",
+    "repo": "repo"
+   },
+   "resources": [
+    {
+     "type": "pr",
+     "id": "o/r#12",
+     "url": "u",
+     "title": "Gadget fix"
+    }
+   ],
+   "workspace_titles": [],
+   "want": {
+    "field": "branch",
+    "snippet": "feat-x"
+   }
+  },
+  {
+   "name": "unicode-fold",
+   "kind": "resource",
+   "query": "équipe",
+   "item": {
+    "type": "pr",
+    "id": "o/r#16",
+    "url": "u",
+    "title": "Équipe"
+   },
+   "want": {
+    "field": "title",
+    "snippet": "Équipe"
+   }
+  }
+ ]
+}

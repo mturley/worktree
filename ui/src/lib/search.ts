@@ -7,6 +7,9 @@ import { shortResourceRef } from "./resourceRef"
  * in the browser. Events are matched on the server (`q` on the timeline
  * endpoints, internal/webui/search.go) with the same rules: case-insensitive
  * whitespace-separated terms, every term must match somewhere.
+ *
+ * The CLI's Go twin of the matchers here is internal/webui/search_match.go;
+ * ui/src/lib/testdata/search-parity.json keeps the two in step.
  */
 
 /**
