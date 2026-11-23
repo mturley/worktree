@@ -525,7 +525,7 @@ func (s *Server) handleTaskActivity(w http.ResponseWriter, r *http.Request) {
 			ResourceTypes: []string{typ},
 			Before:        before, Limit: limit,
 			// Whether or not any worktree follows it.
-			archived: true,
+			Archived: true,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

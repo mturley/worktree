@@ -146,9 +146,15 @@ type eventTypeFilter struct {
 var eventTypeValue = regexp.MustCompile(`^[a-z][a-z0-9_]*\*?$`)
 
 func parseEventTypes(r *http.Request) eventTypeFilter {
+	return eventTypeFilterFrom(r.URL.Query()["event_types"])
+}
+
+// eventTypeFilterFrom parses event_types values (each possibly comma
+// separated) into a filter.
+func eventTypeFilterFrom(vals []string) eventTypeFilter {
 	var f eventTypeFilter
 	seen := map[string]bool{}
-	for _, raw := range r.URL.Query()["event_types"] {
+	for _, raw := range vals {
 		for _, v := range strings.Split(raw, ",") {
 			v = strings.TrimSpace(v)
 			if !eventTypeValue.MatchString(v) || seen[v] {
@@ -284,10 +290,10 @@ func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 		Before:        r.URL.Query().Get("before"), // RFC3339 ts; "" = newest
 		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
 		Limit:         parseLimit(r),
-		humansOnly:    r.URL.Query().Get("humans_only") == "true",
-		archived:      r.URL.Query().Get("archived") == "true",
-		terms:         parseSearchTerms(r.URL.Query().Get("q")),
-		eventTypes:    parseEventTypes(r),
+		HumansOnly:    r.URL.Query().Get("humans_only") == "true",
+		Archived:      r.URL.Query().Get("archived") == "true",
+		Query:         r.URL.Query().Get("q"),
+		EventTypes:    r.URL.Query()["event_types"],
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -297,9 +303,7 @@ func (s *Server) handleGlobalTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 // TimelineQuery selects a page of the activity timeline. The zero value is
-// the newest defaultTimelineLimit events across every worktree. The
-// unexported fields are filters only the HTTP handlers set (archived view,
-// search, event-type subfilters); the CLI cannot.
+// the newest defaultTimelineLimit events across every worktree.
 type TimelineQuery struct {
 	WorktreePath  string // "" = every worktree (global timeline)
 	ResourceType  string // with ResourceID; both or neither
@@ -310,10 +314,10 @@ type TimelineQuery struct {
 	UnreadOnly    bool
 	Limit         int // 0 = defaultTimelineLimit
 
-	archived   bool // global only: include events of resources no worktree follows
-	humansOnly bool // leave out bots' events and CI events (humansOnlyClause)
-	terms      []string
-	eventTypes eventTypeFilter
+	Archived   bool     // global only: include events of resources no worktree follows
+	HumansOnly bool     // leave out bots' events and CI events (humansOnlyClause)
+	Query      string   // search text, parsed by parseSearchTerms
+	EventTypes []string // event_types values (exact, or a trailing * for a prefix)
 }
 
 // Timeline returns one page of the activity timeline, newest first, exactly
@@ -333,8 +337,10 @@ func (s *Server) Timeline(q TimelineQuery) ([]TimelineEvent, error) {
 }
 
 func (s *Server) globalTimeline(q TimelineQuery) ([]TimelineEvent, error) {
-	eventTypeClause, eventTypeArgs := q.eventTypes.sql()
-	searchClause, searchArgs := searchSQL(q.terms)
+	terms := parseSearchTerms(q.Query)
+	eventTypes := eventTypeFilterFrom(q.EventTypes)
+	eventTypeClause, eventTypeArgs := eventTypes.sql()
+	searchClause, searchArgs := searchSQL(terms)
 	types := q.ResourceTypes
 	limit := q.Limit
 
@@ -374,7 +380,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	if q.UnreadOnly {
 		unreadClause = unreadOnlyClause
 	}
-	if q.humansOnly {
+	if q.HumansOnly {
 		unreadClause += humansOnlyClause
 	}
 
@@ -399,7 +405,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 	args = append(args, limit)
 
 	from := base
-	if !q.archived {
+	if !q.Archived {
 		from = base + watchedJoin
 	}
 	rest := sinceClause + resourceClause + typeClause + eventTypeClause + searchClause + unreadClause
@@ -408,7 +414,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		return nil, err
 	}
 	defer rows.Close()
-	out, err := s.collectTimelineRows(rows, limit, q.terms)
+	out, err := s.collectTimelineRows(rows, limit, terms)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +427,7 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		if err != nil {
 			return nil, err
 		}
-		ties, err := s.collectTimelineRows(tieRows, 0, q.terms)
+		ties, err := s.collectTimelineRows(tieRows, 0, terms)
 		tieRows.Close()
 		if err != nil {
 			return nil, err
@@ -429,13 +435,13 @@ JOIN watcher_event_resources er ON er.event_id = e.id `
 		out = appendUnseen(out, ties)
 	}
 	tq := taskFeedQuery{
-		include:    taskEventsSelected(types, q.eventTypes),
-		types:      q.eventTypes.taskTypes(),
+		include:    taskEventsSelected(types, eventTypes),
+		types:      eventTypes.taskTypes(),
 		since:      q.Since,
 		before:     q.Before,
 		limit:      limit,
 		unreadOnly: q.UnreadOnly,
-		terms:      q.terms,
+		terms:      terms,
 	}
 	// A resource filter narrows task events to the tasks linking it.
 	if tq.include && q.ResourceType != "" {
@@ -654,9 +660,9 @@ func (s *Server) handleWorktreeTimeline(w http.ResponseWriter, r *http.Request) 
 		Before:        r.URL.Query().Get("before"), // exclusive RFC3339 cursor; "" = newest
 		UnreadOnly:    r.URL.Query().Get("unread_only") == "true",
 		Limit:         parseLimit(r),
-		humansOnly:    r.URL.Query().Get("humans_only") == "true",
-		terms:         parseSearchTerms(r.URL.Query().Get("q")),
-		eventTypes:    parseEventTypes(r),
+		HumansOnly:    r.URL.Query().Get("humans_only") == "true",
+		Query:         r.URL.Query().Get("q"),
+		EventTypes:    r.URL.Query()["event_types"],
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -685,7 +691,8 @@ func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 		return nil, err
 	}
 	limit, before, since := q.Limit, q.Before, q.Since
-	types, eventTypes, unreadOnly, terms := q.ResourceTypes, q.eventTypes, q.UnreadOnly, q.terms
+	types, unreadOnly := q.ResourceTypes, q.UnreadOnly
+	terms, eventTypes := parseSearchTerms(q.Query), eventTypeFilterFrom(q.EventTypes)
 	typeAllowed := map[string]bool{}
 	for _, t := range types {
 		typeAllowed[t] = true
@@ -724,7 +731,7 @@ func (s *Server) worktreeTimeline(q TimelineQuery) ([]TimelineEvent, error) {
 		if !eventTypes.matches(string(evs[i].Type)) {
 			continue
 		}
-		if q.humansOnly && !humanEvent(evs[i]) {
+		if q.HumansOnly && !humanEvent(evs[i]) {
 			continue
 		}
 		te := enricher.enrich(evs[i])
