@@ -145,10 +145,6 @@ type eventTypeFilter struct {
 // the feed, not quietly empty it.
 var eventTypeValue = regexp.MustCompile(`^[a-z][a-z0-9_]*\*?$`)
 
-func parseEventTypes(r *http.Request) eventTypeFilter {
-	return eventTypeFilterFrom(r.URL.Query()["event_types"])
-}
-
 // eventTypeFilterFrom parses event_types values (each possibly comma
 // separated) into a filter.
 func eventTypeFilterFrom(vals []string) eventTypeFilter {

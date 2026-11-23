@@ -11,6 +11,7 @@ package webui
 //	WorktreeResources  GET /api/resources
 //	WatcherStatuses    GET /api/watchers
 //	ScanListeners      the listeners stream's scan
+//	SlackThread, SlackThreadMessages, ResolveSlackThread  the cached Slack thread read
 //	Search             the search bar grouped answer (the dropdown rows)
 
 // ResourceDTO is one resource as the web UI's cards show it.

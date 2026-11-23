@@ -294,7 +294,6 @@ func (s *Server) Search(q SearchQuery) (SearchResult, error) {
 		}
 		if e.Resource != nil {
 			h.Resource.CustomName = e.Resource.CustomName
-			h.Resource.Title = e.Resource.Title
 		}
 		out.Events = append(out.Events, h)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,6 +22,8 @@ type searchFix struct {
 	srv    *Server
 	a, b   string
 	taskID int64
+	// archivedTaskID is a done task whose only link is the archived PR.
+	archivedTaskID int64
 }
 
 func newSearchFix(t *testing.T) *searchFix {
@@ -44,6 +47,18 @@ func newSearchFix(t *testing.T) *searchFix {
 	must(t, resources.Add(conn, f.b, resources.Resource{Type: "pr", ID: "o/r#9", URL: "p9"}))
 	must(t, watcherdb.UpsertResourceState(conn, "pr", "o/r#9", `{"title":"Old inferencepool PR","state":"MERGED"}`, "2026-02-01T00:00:00Z", "x"))
 	must(t, resources.Remove(conn, f.b, "pr", "o/r#9"))
+	// An archived task: done, and its only link is the archived PR.
+	at, err := tasks.Create(conn, tasks.Actor{Kind: tasks.ActorUser}, tasks.NewTask{
+		Title: "Retire inferencepool v0 docs",
+		Focus: []tasks.LinkTarget{{Kind: tasks.LinkResource, ResourceType: "pr", ResourceID: "o/r#9"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tasks.SetState(conn, tasks.Actor{Kind: tasks.ActorUser}, at.ID, tasks.StateDone); err != nil {
+		t.Fatal(err)
+	}
+	f.archivedTaskID = at.ID
 
 	insertEvent(t, conn, "e1", "2026-09-01T00:00:02Z", "slack", "slack_thread_root", "Thread started by Alice: inferencepool is slow", "slack", "C1:1.1", "su")
 	insertEvent(t, conn, "e2", "2026-09-01T00:00:01Z", "slack", "slack_reply", "Reply from Bob", "slack", "C1:1.1", "su")
@@ -132,8 +147,15 @@ func TestSearchScoped(t *testing.T) {
 	if got.Worktrees != nil || got.Tasks != nil {
 		t.Errorf("scoped: worktrees=%v tasks=%v", got.Worktrees, got.Tasks)
 	}
-	if len(got.Resources) != 0 || len(got.Events) != 0 {
+	if len(got.Resources) != 0 {
 		t.Errorf("beta has nothing matching: %+v", got)
+	}
+	// The archived task's own events do follow beta (it last followed the
+	// archived PR); no other event may.
+	for _, e := range got.Events {
+		if e.Resource.Type != "task" || e.Resource.ID != strconv.FormatInt(f.archivedTaskID, 10) {
+			t.Errorf("beta has an unrelated event: %+v", e)
+		}
 	}
 	got, err = f.srv.Search(SearchQuery{Query: "inferencepool", WorktreePath: f.a})
 	if err != nil {
@@ -229,6 +251,24 @@ func TestSearchArchived(t *testing.T) {
 		if r.ID != "o/r#9" && r.Archived {
 			t.Errorf("live resource marked archived: %+v", r)
 		}
+	}
+	hasTask := func(res SearchResult) bool {
+		for _, tk := range res.Tasks {
+			if tk.ID == f.archivedTaskID {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasTask(got) {
+		t.Errorf("archived task missing with Archived: %+v", got.Tasks)
+	}
+	live, err := f.srv.Search(SearchQuery{Query: "inferencepool"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasTask(live) {
+		t.Errorf("archived task leaked without Archived: %+v", live.Tasks)
 	}
 }
 
