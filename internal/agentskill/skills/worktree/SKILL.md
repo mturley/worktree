@@ -79,25 +79,35 @@ Slack thread only once they say to. Reading threads eagerly burns your context.
    name. Map time words to `--since` (`24h`, `7d`, RFC 3339), source words to
    `--source github|jira|slack|tasks|links`, "here" or "this worktree" to
    `--worktree .`, "unread" to `--unread`, and "people, not bots" to `--humans-only`.
-   Narrow events with `--type <type or prefix*>`; `--limit N` caps each group.
+   Narrow events with `--type <type or prefix*>`. `--limit N` sets the events limit
+   only; worktrees, resources and tasks keep their default of 10 hits each.
 2. Read the groups: `worktrees`, `resources`, `tasks`, `events` (with `--worktree`,
    only `resources` and `events`). Each hit has its match: `field`, `snippet`, and
    `via_key`/`via_field` when a worktree matched through a resource. Event hits carry
    no body, so quote the snippet and don't claim more. Group event hits by `resource`.
 3. Nothing (exit 1)? Retry with fewer or different terms, then `--archived`, which
-   widens to archived events, resources and tasks (not with `--worktree`).
-4. A Slack hit is a resource of type `slack`. List the candidates with
-   `worktree slack thread <ref> --json` (a URL, `slack:<id>`, or a custom name): that
-   is the summary only. Show channel, custom name or title, author, first message,
-   `started_at` and `updated_at`, and ask which one.
-5. **Never run `slack thread --messages` until the user says to, even when there is
-   only one candidate.** Then read it and answer from it.
-6. If `complete` is false, fewer replies are cached than Slack reported: say so.
-   Exit 2 with `"ambiguous": true` is a candidate list, not a failure. Show its
-   `candidates` and ask. Exit 1 means no such thread is followed.
+   widens to archived events, resources and tasks (not with `--worktree`). The cache
+   only covers resources some worktree follows. If it still isn't there, say so and
+   offer `worktree resources add <url>` to follow it: that is a write, so ask first.
+4. Answer by hit kind:
+   - PR or Jira resource: give its URL. For more, `worktree activity --resource <url>
+     --json` for its events, `worktree pr-threads list --json` for review threads on
+     the branch's PR, `worktree info --json` for the worktree's state.
+   - Worktree: give its path and branch, and `worktree info --json` for its state.
+   - Task: `worktree tasks show <id> --json`.
+   - Slack thread: follow the branch below.
 
-PRs and Jira issues need no step 4: the hit's `resource` and its events answer
-"which PR" and "did anyone update it".
+### Slack branch
+
+a. List the candidates with `worktree slack thread <ref> --json` (a URL, `slack:<id>`,
+   or a custom name). That is the summary only. Show channel, custom name or title,
+   author, first message, `started_at` and `updated_at`, and ask which one. A name
+   matching several threads exits 2 with the candidates on stdout and
+   `"ambiguous": true`: that is a candidate list, not a failure. Exit 1 means no such
+   thread is followed.
+b. **Never run `slack thread --messages` until the user says to, even when there is
+   only one candidate.** Then read it and answer from it.
+c. If `complete` is false, fewer replies are cached than Slack reported: say so.
 
 ## Drill-downs
 
