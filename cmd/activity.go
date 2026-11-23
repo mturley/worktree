@@ -234,12 +234,12 @@ func parseSince(now time.Time, v string) (string, error) {
 
 // sourceTypes maps --source names to the timeline's resource types.
 func sourceTypes(sources []string) ([]string, error) {
-	m := map[string]string{"github": "pr", "jira": "jira", "slack": "slack", "tasks": "task"}
+	m := map[string]string{"github": "pr", "jira": "jira", "slack": "slack", "tasks": "task", "links": "link"}
 	out := make([]string, 0, len(sources))
 	for _, s := range sources {
 		t, ok := m[s]
 		if !ok {
-			return nil, fmt.Errorf("unknown --source %q: want github, jira, slack or tasks", s)
+			return nil, fmt.Errorf("unknown --source %q: want github, jira, slack, tasks or links", s)
 		}
 		out = append(out, t)
 	}
