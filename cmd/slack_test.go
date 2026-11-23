@@ -82,6 +82,10 @@ func TestSlackThreadMessagesJSON(t *testing.T) {
 	if len(msgs) != 2 || msgs[0]["text"] != "hello *world*" || msgs[1]["author"] != "Bob" {
 		t.Fatalf("messages = %v", msgs)
 	}
+	out, err = runCLI(t, "slack", "thread", "plan")
+	if err != nil || strings.Contains(out, "sure") {
+		t.Fatalf("default output carries message text: %q, %v", out, err)
+	}
 	out, err = runCLI(t, "slack", "thread", "plan", "--messages")
 	if err != nil || !strings.Contains(out, "Ann · ") || !strings.Contains(out, "hello *world*") {
 		t.Fatalf("human = %q, %v", out, err)
@@ -118,5 +122,38 @@ func TestSlackThreadNotFoundExit1(t *testing.T) {
 	}
 	if got := exitCode(err, &bytes.Buffer{}); got != 1 {
 		t.Fatalf("exit = %d", got)
+	}
+}
+
+func TestSlackThreadIncompleteAndSynthesizedRoot(t *testing.T) {
+	live, _ := seedReadFixture(t)
+	conn, err := wdb.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	id := "C2:1795041474.372839"
+	if err := resources.Add(conn, live, resources.Resource{Type: "slack", ID: id, URL: "https://x.slack.com/archives/C2/p1795041474372839"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := watcherdb.UpsertResourceState(conn, "slack", id, `{"title":"Deploy","author":"Ann","reply_count":3}`, "2026-02-01T00:00:00Z", "x"); err != nil {
+		t.Fatal(err)
+	}
+	ext, body := "1795041474.372839", "the root words"
+	if err := watcherdb.InsertEvent(conn, watcher.Event{ID: "w1", TS: "2026-11-17T01:01:00Z", ExternalTS: &ext, Source: "slack",
+		Type: watcher.EventType("watch_started"), Title: "t", Body: &body}, watcher.Resource{Type: "slack", ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCLI(t, "slack", "thread", "slack:"+id, "--messages")
+	if err != nil {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	for _, want := range []string{"Only 0 of 3 replies are cached.", "(from the follow event)", "the root words", "Worktrees: "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "[") && strings.Contains(out, "Worktrees: [") {
+		t.Errorf("worktrees printed as a Go slice:\n%s", out)
 	}
 }

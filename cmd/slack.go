@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	wdb "github.com/mturley/worktree/internal/db"
@@ -112,8 +113,10 @@ func threadLabel(t webui.SlackThreadSummary) string {
 		return t.CustomName
 	case t.Title != "":
 		return t.Title
+	case t.ChannelName != "":
+		return t.ChannelName
 	}
-	return t.ChannelName
+	return t.ID
 }
 
 func localTime(rfc string) string {
@@ -143,10 +146,10 @@ func printSlackThreadHuman(out io.Writer, t webui.SlackThreadSummary, msgs []web
 	fmt.Fprintln(out, state)
 	fmt.Fprintln(out, ui.Dim(t.URL))
 	if len(t.Worktrees) > 0 {
-		fmt.Fprintf(out, "Worktrees: %v\n", t.Worktrees)
+		fmt.Fprintf(out, "Worktrees: %s\n", strings.Join(t.Worktrees, ", "))
 	}
 	if len(t.LastFollowedBy) > 0 {
-		fmt.Fprintf(out, "Last followed by: %v\n", t.LastFollowedBy)
+		fmt.Fprintf(out, "Last followed by: %s\n", strings.Join(t.LastFollowedBy, ", "))
 	}
 	if t.FirstMessage != "" {
 		fmt.Fprintf(out, "\n%s\n", t.FirstMessage)
