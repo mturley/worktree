@@ -1,36 +1,45 @@
 # <img src="ui/public/favicon.svg" width="36" height="36" align="top" /> worktree
 
-**worktree** brings your work and its context together in one place. It gives each thing you're working on an isolated, complete home: a git worktree with its own reserved port range and kubeconfig, a unified feed of activity from external resources associated with that worktree (PRs, Jira issues and Slack threads), and a to-do list coupled with the resources, activity and code related to each task. This reduces the context switching necessary to complete each task and streamlines context switching between tasks, allowing you to multitask more effectively and reduce the overall mental load of your job.
+**[Quick start](#quick-start)** · **[CLI reference](docs/cli.md)** · **[Setup guide](docs/setup.md)** · **[Configuration](docs/configuration.md)**
 
-The **CLI** lets you and your AI agents create worktrees and manage everything attached to them, and sources managed environment variables when you `cd` into each worktree.
+In the day-to-day life of a software engineer, here are some things that suck:
+* Keeping track of all your conversations and updates scattered across places like GitHub, Jira, Slack and elsewhere.
+* Keeping your to-do list in sync with all that disorganized and ever-changing external context related to each task.
+* Running a single dev server on one branch at a time when you’re working on and reviewing multiple branches.
+* Logging into a single remote dev environment (e.g. k8s cluster) at a time when you’re working with different environments per branch.
+* Having multiple editor windows open on multiple branches and not quickly knowing which is which.
 
-The **web UI** gives you:
+**worktree** brings your work and its context together in one place. It gives each thing you're working on an isolated, complete home: a git worktree with its own reserved port range and kubeconfig, a unified feed of activity from PRs, Jira issues and Slack threads related to that worktree, and a to-do list that tightly couples each task with its related conversations, reference material, activity and code. This isolation and consolidation make mental context switching both less frequent and more streamlined, allowing you to multitask more effectively and reduce the overall mental load of your work.
 
-- A live inbox of the outside activity related to each worktree
-- An environment view showing you those env vars, ports actively being listened on by processes in the worktree, and its current kubeconfig context
-- A code view where you can send review comments to an agent or to a PR
-- A task list that sits right next to the work it's about
-- A place to write notes next to each thing you're keeping track of
+In other words, it is an engineer stress reduction tool.
+
+## Highlights
+
+### The `wt` CLI
+
+The CLI lets you and your AI agents create, manage and navigate worktrees and everything attached to them, and automatically sources worktree-scoped environment variables when you `cd` so your shell and scripts can leverage the isolated environments. The CLI has rich access to cached GitHub/Jira/Slack activity, and its agent skill teaches your AI how to ask it about what’s going on with your work.
+
+### The local web UI
+
+The UI gives each worktree a live inbox of its outside activity with configurable push notifications, an environment view (vars, listening ports and kubeconfig context), a code view (diff, PR comments and local comments for your AI), a lightweight embedded Slack thread client for quick replies, a heirarchy tree for Jira issues, a feature-rich to-do list and a notes field. Its home page gives you a combined view across all worktrees and a powerful search bar. It works great on your phone. It also has a ton of optional integrations with [cmux](https://cmux.com/), like a tab/pane manager and two-way focus sync so you can keep the worktree details for the active cmux workspace up on a second screen.
+
+### The  macOS menu bar app
+
+A mini version of the web UI lives in your menu bar for a quick view of your tasks and unread activity.
+
+## Here are some pretty screenshots
+
+They may be out of date, I'm adding features to this thing all the time.
 
 ![The worktree web UI: worktree cards with their PRs, Jira issues and Slack threads, beside a live activity feed](docs/images/hero.png)
 
 ![The worktree web UI on a worktree details page with a PR selected](docs/images/hero-detail.png)
 
-**[Quick start](#quick-start)** · **[CLI reference](docs/cli.md)** · **[Setup guide](docs/setup.md)** · **[Configuration](docs/configuration.md)**
+![The worktree showing `wt list` and `wt cd` examples](docs/images/cli-detail.png)
 
-
-## Highlights
-
-- **Live GitHub, Jira and Slack activity, grouped by the work it's about.** Every worktree collects the activity on its own resources, so you never miss a PR comment or Slack reply related to the work you're looking at.
-- **An isolated environment per worktree.** Each one has its own reserved port range and kubeconfig, so you can run several dev servers on different branches and stay logged in to different clusters at the same time.
-- **Slack threads, read and answered inline**, next to the PRs, issues and tasks they're about.
-- **Notifications and unread tracking** for each resource, so you know exactly what's new since you last looked.
-- **Tasks that live with their context**, with blockers that clear themselves when a PR merges or an issue is done.
-- **One review view for your changes and for PRs**: send comments to an AI agent or to GitHub, and open your preferred editor on the file you're looking at.
-- **Built for AI agents**: an installable agent skill and a scriptable CLI, so an agent can answer questions about your worktrees and tell you what needs your attention without having to go fetch the activity itself.
-- **One-command worktrees** from a branch name, a PR number or URL, or a Jira issue.
-- **A macOS menu bar app** that keeps your tasks and activity one click away, and blinks when something's unread.
-- **Deep [cmux](https://cmux.com/) integration**, and a UI that works from your phone.
+-----
+> HEY FYI - I'm in the middle of rewriting my README, below this point there are missing screenshots and some sections that I want to reorganize and slim down.
+-----
 
 ## Quick start
 
