@@ -7,6 +7,7 @@ import type { Suggestion, SuggestionItem } from "./SearchBar"
 import { useCmuxMatches } from "../../api/cmux"
 import { CmuxWorkspaceLabel } from "../CmuxWorkspaceSection"
 import { ResourceCardBody } from "../ResourceCard"
+import { ArchivedToggle } from "../ArchivedToggle"
 import { EventRow } from "../EventRow"
 import { worktreeName } from "../../lib/homeWorktree"
 import type { Task, WorktreeSummary } from "../../api/types"
@@ -51,7 +52,7 @@ export function fitDropdown({ barLeft, viewport, wide }: { barLeft: number; view
  * nothing inside it may be a button or link of its own.
  */
 export function SearchSuggestions({
-  items, active, onHover, onPick, onViewAll, fillWindow = false,
+  items, active, onHover, onPick, onViewAll, fillWindow = false, archivedToggle,
 }: {
   items: Suggestion[]
   active: number
@@ -65,6 +66,8 @@ export function SearchSuggestions({
    * dropdown is too small for the list to be any less.
    */
   fillWindow?: boolean
+  /** Include archived at the top of the box; see SearchBar. */
+  archivedToggle?: { value: boolean; onChange: (v: boolean) => void }
 }) {
   const ref = useRef<HTMLDivElement>(null)
   // Keeps the keyboard's row in view as ↑/↓ walk a list taller than the box.
@@ -163,6 +166,18 @@ export function SearchSuggestions({
         </Text>
       )}
       </Group>
+      {archivedToggle && (
+        // mousedown, as the rows: the input's blur must not close the list
+        // before the switch gets its click.
+        <Box
+          px="sm"
+          py={6}
+          onMouseDown={(e) => e.preventDefault()}
+          style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}
+        >
+          <ArchivedToggle value={archivedToggle.value} onChange={archivedToggle.onChange} />
+        </Box>
+      )}
       {items.length === 0 && (
         <Text size="sm" c="dimmed" px="sm" py="sm">Nothing matches your search</Text>
       )}
@@ -243,7 +258,12 @@ function SuggestionBody({ item }: { item: SuggestionItem }) {
     case "worktree":
       return <WorktreeBody w={item.w} />
     case "resource":
-      return <ResourceCardBody r={item.r} />
+      return (
+        <ResourceCardBody
+          r={item.r}
+          aside={item.archived ? <Badge size="xs" variant="light" color="gray" style={{ flex: "none" }}>archived</Badge> : undefined}
+        />
+      )
     case "event":
       // The global feed's form, which labels archived events.
       return <EventRow e={item.e} showWorktrees unreadBorder={false} />

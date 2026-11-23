@@ -22,7 +22,7 @@ export interface Suggestion {
 
 export type SuggestionItem =
   | { kind: "worktree"; w: WorktreeSummary }
-  | { kind: "resource"; r: ResourceDTO }
+  | { kind: "resource"; r: ResourceDTO; archived?: boolean }
   | { kind: "event"; e: TimelineEvent }
   | { kind: "task"; t: Task; match: SearchMatch | null }
 
@@ -52,6 +52,7 @@ export function SearchBar({
   onEscapeIdle,
   onEscapeFirst,
   fillWindow,
+  archivedToggle,
 }: {
   value: string
   onChange: (q: string) => void
@@ -78,6 +79,12 @@ export function SearchBar({
   onEscapeFirst?: () => void
   /** The suggestions fill the window below the bar (the mini view); see SearchSuggestions. */
   fillWindow?: boolean
+  /**
+   * Include archived, as a switch at the top of the dropdown: widens the
+   * search to archived resources and tasks. Only the home page passes it; a
+   * worktree's search never leaves the worktree.
+   */
+  archivedToggle?: { value: boolean; onChange: (v: boolean) => void }
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const canEscape = escapeActive ?? Boolean(value)
@@ -182,6 +189,7 @@ export function SearchBar({
           onPick={pick}
           onViewAll={() => setOpen(false)}
           fillWindow={fillWindow}
+          archivedToggle={archivedToggle}
         />
       )}
     </div>

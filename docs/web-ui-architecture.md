@@ -3405,6 +3405,20 @@ filtering is independent.
   pseudo-resource is nothing to select. The routing lives in
   `suggestions.ts`, not on the row, so Enter and a click agree and the row
   stays display-only.
+- **Include archived (home page only).** `useHomeArchived` (`hooks/useHomeArchived.ts`)
+  is ONE setting, owned by `HomePage` and handed to both `useActivityPanel`
+  (its `archived` option; /mini omits it and keeps its own) and
+  `SearchBar`'s `archivedToggle` prop, which puts the same `ArchivedToggle`
+  at the top of the dropdown. Flipping either flips both; not persisted. On,
+  the dropdown also reaches archived resources (`useArchivedResources`,
+  `api.allResources({ archived: true })`, keyed `["resources", "__archived__"]`,
+  filtered to rows with `archived`) and archived tasks (`useTasks` with
+  `{ completed: true, archived: true }`, filtered to `t.archived`); both
+  queries are `enabled` only while it is on. An archived resource's row
+  carries an "archived" badge and picks through `go.archivedResource`, which
+  opens the read-only `ArchivedResourceModal` (the row, "Last followed in …",
+  an Open link, `FollowInWorktreeMenu` navigating as `EventDetailsModal`'s
+  `followIn` does). The worktree page and /mini pass no toggle.
 - Sticky section headings with counts; up to 640 px wide and 70vh tall when
   wide, the full screen width (less the gutter) when narrow.
 - A hint bar heads it, also when nothing matches ("Nothing matches your

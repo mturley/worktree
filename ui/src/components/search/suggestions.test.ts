@@ -140,3 +140,24 @@ describe("buildSuggestions", () => {
     expect(buildSuggestions({ terms: [], resources: [], events: [ev("e1")], go })).toEqual([])
   })
 })
+
+describe("buildSuggestions archived resources", () => {
+  it("marks an archived resource's row and opens it through go.archivedResource, never go.resource", () => {
+    const resource = vi.fn()
+    const archivedResource = vi.fn()
+    const out = buildSuggestions({
+      terms: ["oauth"],
+      resources: [{ r: res("J-1", "oauth live") }, { r: res("J-2", "oauth gone"), archived: true }],
+      events: [],
+      go: { ...go, resource, archivedResource },
+    })
+    const rows = out.filter((s) => s.group === "Resources")
+    expect(rows.map((s) => s.item)).toEqual([
+      expect.objectContaining({ kind: "resource", archived: undefined }),
+      expect.objectContaining({ kind: "resource", archived: true }),
+    ])
+    rows[1].onPick()
+    expect(archivedResource).toHaveBeenCalledWith(expect.objectContaining({ id: "J-2" }))
+    expect(resource).not.toHaveBeenCalled()
+  })
+})

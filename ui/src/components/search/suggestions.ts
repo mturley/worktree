@@ -39,13 +39,16 @@ export const SUGGESTION_LIMITS = { worktrees: 3, resources: 5, tasks: 3, events:
 export function buildSuggestions(input: {
   terms: string[]
   worktrees?: { w: WorktreeSummary; workspaceTitles: string[]; resources: ResourceDTO[] }[]
-  resources: { r: ResourceDTO; worktreePath?: string }[]
+  /** `archived`: no worktree follows it (home page, Include archived on); it opens through go.archivedResource. */
+  resources: { r: ResourceDTO; worktreePath?: string; archived?: boolean }[]
   /** The tasks the page's task panel lists. */
   tasks?: Task[]
   events: TimelineEvent[]
   go: {
     worktree: (path: string) => void
     resource: (r: ResourceDTO, path?: string) => void
+    /** An archived resource has no worktree page to route to. */
+    archivedResource?: (r: ResourceDTO) => void
     event: (e: TimelineEvent) => void
     /**
      * Opens a task: a task's row and a task event's row pick this, never
@@ -80,10 +83,10 @@ export function buildSuggestions(input: {
       key: `wt:${w.path}`, group: "Worktrees", label: w.branch, detail: w.repo, item: { kind: "worktree", w },
       onPick: () => go.worktree(w.path),
     })),
-    ...rs.map(({ r, worktreePath }): Suggestion => ({
+    ...rs.map(({ r, worktreePath, archived }): Suggestion => ({
       key: `res:${r.type}:${r.id}`, group: "Resources", label: resourceLabel(r), detail: shortResourceRef(r.type, r.id),
-      item: { kind: "resource", r },
-      onPick: () => go.resource(r, worktreePath),
+      item: { kind: "resource", r, archived },
+      onPick: () => (archived ? go.archivedResource?.(r) : go.resource(r, worktreePath)),
     })),
     ...ts.map(({ t, match }): Suggestion => ({
       key: `task:${t.id}`, group: "Tasks", label: t.title, detail: t.ref, item: { kind: "task", t, match },

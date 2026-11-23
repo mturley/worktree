@@ -215,3 +215,24 @@ describe("SearchBar", () => {
     expect(screen.getByTestId("q").textContent).toBe("")
   })
 })
+
+describe("SearchBar archived toggle", () => {
+  const suggestions = [{ key: "a", group: "Resources", label: "alpha", onPick: () => {} }]
+  it("shows the toggle at the top of the dropdown only when given one, and reports a flip", async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <MantineProvider>
+        <SearchBar value="al" onChange={() => {}} suggestions={suggestions} archivedToggle={{ value: false, onChange }} />
+      </MantineProvider>,
+    )
+    await userEvent.click(screen.getByRole("searchbox"))
+    await userEvent.click(screen.getByRole("switch", { name: "Include archived" }))
+    expect(onChange).toHaveBeenCalledWith(true)
+    // The bar still has its list: clicking the switch did not close it.
+    expect(screen.getByTestId("search-suggestions")).toBeInTheDocument()
+    rerender(
+      <MantineProvider><SearchBar value="al" onChange={() => {}} suggestions={suggestions} /></MantineProvider>,
+    )
+    expect(screen.queryByRole("switch", { name: "Include archived" })).toBeNull()
+  })
+})
