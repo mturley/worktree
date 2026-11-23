@@ -132,7 +132,10 @@ const snippetRadius = 30
 // snippet returns text around the first occurrence of term (lowercase):
 // whitespace collapsed, cut at word boundaries, "…" marking each cut. "" when
 // term does not occur. Same rule as ui/src/lib/search.ts snippet().
-func snippet(text, term string) string {
+func snippet(text, term string) string { return snippetRadiusAround(text, term, snippetRadius) }
+
+// snippetRadiusAround is snippet with the context radius given.
+func snippetRadiusAround(text, term string, radius int) string {
 	flat := []rune(strings.Join(strings.Fields(text), " "))
 	low := make([]rune, len(flat))
 	for i, r := range flat {
@@ -149,7 +152,7 @@ func snippet(text, term string) string {
 	if at < 0 {
 		return ""
 	}
-	start, end := at-snippetRadius, at+len(tr)+snippetRadius
+	start, end := at-radius, at+len(tr)+radius
 	cutStart, cutEnd := start > 0, end < len(flat)
 	if !cutStart {
 		start = 0
