@@ -83,6 +83,8 @@ var skillReadCommands = map[string]bool{
 	"worktree notes show":           true,
 	"worktree ports":                true,
 	"worktree search":               true,
+	"worktree slack":                true,
+	"worktree slack thread":         true,
 	"worktree pr-threads list":      true,
 	"worktree resources list":       true,
 	"worktree review-comments list": true,

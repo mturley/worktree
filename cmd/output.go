@@ -17,6 +17,19 @@ const SchemaVersion = 1
 // printing anything.
 var ErrNothingFound = errors.New("nothing found")
 
+// ErrPrinted marks an error for exit code 2 whose command has already printed
+// its output to stdout (an ambiguous reference's candidates); only the error's
+// own message goes to stderr. Wrap with printed.
+var ErrPrinted = errors.New("output printed")
+
+type printedError struct{ err error }
+
+func (p printedError) Error() string        { return p.err.Error() }
+func (p printedError) Unwrap() error        { return p.err }
+func (p printedError) Is(target error) bool { return target == ErrPrinted }
+
+func printed(err error) error { return printedError{err} }
+
 // printJSON writes {"schema_version": 1, ...fields} and a newline. A
 // schema_version key in fields is overwritten.
 func printJSON(w io.Writer, fields map[string]any) error {
