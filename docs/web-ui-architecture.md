@@ -3411,7 +3411,7 @@ filtering is independent.
   `SearchBar`'s `archivedToggle` prop, which puts the same `ArchivedToggle`
   at the top of the dropdown. Flipping either flips both; not persisted. On,
   the dropdown also reaches archived resources (`useArchivedResources`,
-  `api.allResources({ archived: true })`, keyed `["resources", "__archived__"]`,
+  `api.allResources({ archived: true })` (`GET /api/all-resources?archived=true`, see the endpoint table), keyed `["resources", "__archived__"]`,
   filtered to rows with `archived`) and archived tasks (`useTasks` with
   `{ completed: true, archived: true }`, filtered to `t.archived`); both
   queries are `enabled` only while it is on. An archived resource's row
