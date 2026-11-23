@@ -272,12 +272,18 @@ describe("WorktreeDetailPage pinned cards", () => {
   /** The nearest pinned (position: sticky) ancestor of `el`, if any. */
   const pinned = (el: HTMLElement) => el.closest<HTMLElement>('[style*="sticky"]')
 
-  it("pins the expanded details card with the header when wide and tall", async () => {
+  it("lets the expanded details card scroll away even when wide and tall", async () => {
+    // Code's file list or a big cmux workspace can make it taller than the
+    // screen leaves for the content beneath.
     setViewport("wide")
     const user = userEvent.setup()
     wrap()
     await user.click(await screen.findByRole("tab", { name: "Environment" }))
-    expect(screen.getByRole("tab", { name: "Environment" }).closest("[data-page-header]")).not.toBeNull()
+    const env = screen.getByRole("tab", { name: "Environment" })
+    expect(env.closest("[data-page-header]")).toBeNull()
+    expect(pinned(env)).toBeNull()
+    // The title row itself stays pinned.
+    expect(screen.getByRole("heading", { name: "foo" }).closest("[data-page-header]")).not.toBeNull()
   })
 
   it("keeps scrolled content off the toolbar when narrow, without moving it at rest", () => {

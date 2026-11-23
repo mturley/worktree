@@ -3003,8 +3003,9 @@ way:
 - **`useIsWide()`** (above) owns *how wide* the viewport is, independent of
   selection.
 - **`useIsTall()`** (720px+) decides, with `useIsWide()`, whether the page
-  pins its cards (`pinCards`): the details card (with the header, or atop
-  the resource column on Notes) and a selected PR/Jira resource's tab bar
+  pins its cards (`pinCards`): the details card on Notes (atop the
+  resource column; off Notes it sits under the header and always scrolls
+  away, since Code and cmux can make it very tall) and a selected PR/Jira resource's tab bar
   (`ResourceDetailPane`'s `stickyTop`), and the worktree's Activity
   header with its filters, so the activity or linked resources scroll
   beneath them. The home page's wide columns each scroll on their own

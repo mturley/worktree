@@ -886,12 +886,13 @@ export function WorktreeDetailPage() {
             <HeaderActions />
           </Group>
           {!wide && toolbar}
-          {/* Pinned with the header only with room to spare; otherwise
-              below it, scrolling away with the page. */}
-          {!inDiff && !inColumn && pinCards && card}
         </Stack>
       </Box>
-      {!inDiff && !inColumn && !pinCards && card}
+      {/* Off the Notes tab (or narrow), the card sits under the header and
+          scrolls away with the page, never pinned: Code's file list and a
+          big cmux workspace make it tall enough to crowd out everything
+          beneath it. Only the Notes card, in the resource column, pins. */}
+      {!inDiff && !inColumn && card}
       {/*
         No Overview/Slack tabs: a Slack thread is selected like any other
         resource and renders in ResourceDetailPane. The narrow-only
