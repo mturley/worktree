@@ -181,6 +181,32 @@ func TestSearchSourcesAndUnread(t *testing.T) {
 	if got.Tasks != nil {
 		t.Errorf("unread must drop tasks: %+v", got.Tasks)
 	}
+	// resources.Add seeds each cursor at now: e3 (2026) is read, while e5,
+	// dated 2099, is past o/r#5's cursor and so unread.
+	must(t, resources.Add(f.conn, f.b, resources.Resource{Type: "pr", ID: "o/r#5", URL: "p5"}))
+	must(t, watcherdb.UpsertResourceState(f.conn, "pr", "o/r#5", `{"title":"Fresh inferencepool PR","state":"OPEN"}`, "2026-02-01T00:00:00Z", "x"))
+	insertEvent(t, f.conn, "e5", "2099-01-01T00:00:00Z", "github", "pr_comment", "Fresh comment", "pr", "o/r#5", "p5")
+	all, err := f.srv.Search(SearchQuery{Query: "inferencepool"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRes(all.Resources, "o/r#1") || !hasRes(all.Resources, "o/r#5") {
+		t.Fatalf("setup: %+v", all.Resources)
+	}
+	got, err = f.srv.Search(SearchQuery{Query: "inferencepool", UnreadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRes(got.Resources, "o/r#1") || !hasRes(got.Resources, "o/r#5") {
+		t.Errorf("unread resources = %+v", got.Resources)
+	}
+	var ids []string
+	for _, e := range got.Events {
+		ids = append(ids, e.ID)
+	}
+	if !containsString(ids, "e5") || containsString(ids, "e3") {
+		t.Errorf("unread events = %v", ids)
+	}
 }
 
 func TestSearchArchived(t *testing.T) {
@@ -209,6 +235,8 @@ func TestSearchArchived(t *testing.T) {
 func TestSearchTasksIncludeDone(t *testing.T) {
 	t.Parallel()
 	f := newSearchFix(t)
+	// The done task is created FIRST, so a stable sort would list it first
+	// unless the done-after-open rule pushes it back.
 	done, err := tasks.Create(f.conn, tasks.Actor{Kind: tasks.ActorUser}, tasks.NewTask{Title: "Tune inferencepool docs"})
 	if err != nil {
 		t.Fatal(err)
@@ -216,14 +244,21 @@ func TestSearchTasksIncludeDone(t *testing.T) {
 	if _, err := tasks.SetState(f.conn, tasks.Actor{Kind: tasks.ActorUser}, done.ID, tasks.StateDone); err != nil {
 		t.Fatal(err)
 	}
-	// Created first so the stable order would put it first if rank ignored state.
+	open, err := tasks.Create(f.conn, tasks.Actor{Kind: tasks.ActorUser}, tasks.NewTask{Title: "Tune inferencepool sizing again"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := f.srv.Search(SearchQuery{Query: "tune inferencepool"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Tasks) != 2 || got.Tasks[0].ID != f.taskID || got.Tasks[1].ID != done.ID || got.Tasks[1].State != "done" {
-		t.Errorf("tasks = %+v", got.Tasks)
+	if len(got.Tasks) != 3 {
+		t.Fatalf("tasks = %+v", got.Tasks)
 	}
+	if last := got.Tasks[2]; last.ID != done.ID || last.State != "done" {
+		t.Errorf("done task must rank after the open ones: %+v", got.Tasks)
+	}
+	_ = open
 }
 
 func TestSearchLiteralWildcards(t *testing.T) {
