@@ -91,8 +91,8 @@ Slack thread only once they say to. Reading threads eagerly burns your context.
    offer `worktree resources add <url>` to follow it: that is a write, so ask first.
 4. Answer by hit kind:
    - PR or Jira resource: give its URL. For more, `worktree activity --resource <url>
-     --json` for its events, `worktree pr-threads list --json` for review threads on
-     the branch's PR, `worktree info --json` for the worktree's state.
+     --json` for its events, `worktree pr-threads list --json` (contacts GitHub; only
+     if the user asks) for review threads on the branch's PR, `worktree info --json` for the worktree's state.
    - Worktree: give its path and branch, and `worktree info --json` for its state.
    - Task: `worktree tasks show <id> --json`.
    - Slack thread: follow the branch below.
