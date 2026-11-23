@@ -79,7 +79,11 @@ func (s *Server) ArchivedResources() ([]AllResource, error) {
 		res := resources.Resource{Type: k.typ, ID: k.id, URL: f.url, Related: true}
 		meta, err := db.GetResourceMeta(s.DB, k.typ, k.id)
 		if err != nil {
-			return nil, err
+			// One resource's custom name is not worth losing the list.
+			if s.Logger != nil {
+				s.Logger.Printf("GetResourceMeta(%s,%s): %v", k.typ, k.id, err)
+			}
+			meta = nil
 		}
 		if meta != nil {
 			res.CustomName = meta.CustomName
