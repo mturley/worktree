@@ -110,7 +110,7 @@ worktree linked <url|type:id> [--resolve-links] [--json]   # What a PR, Jira iss
   - `--archived` widens activity, resources and tasks to archived ones, and only works unscoped (with `--worktree` it is an error).
   - Exit 1 when every group is empty; exit 2 on any error.
 - **`slack thread`:** reads one Slack thread you follow, from the local cache, and contacts nothing. By default it prints a summary only: channel, custom name, title, author, started and updated times, reply count, how many replies are cached, the worktrees following it and an excerpt of the first message. `--messages` adds every message in order, as Slack mrkdwn with the author prefix stripped; a root message rebuilt from the follow event is marked as synthesized. `complete: false` in the JSON means fewer replies are cached than Slack reported.
-  - A name matches a custom name or a cached title, exact before substring. If several threads match, it prints up to 10 candidates on stdout (`"ambiguous": true` and `total` in JSON), `ambiguous: N threads match "<name>"` on stderr and exits 2. That is a candidate list to choose from, not a failure.
+  - A name matches a custom name or a cached title, exact before substring (a channel name does not resolve a thread). If several threads match, it prints up to 10 candidates on stdout (`"ambiguous": true` and `total` in JSON), `ambiguous: N threads match "<name>"` on stderr and exits 2. That is a candidate list to choose from rather than a failure of the command.
   - Exit 1 when no thread matches.
 - **Services that are off:** `pr-threads` and `linked` exit 2 while that service is turned off.
 - **Marking single events:** event ids are the ones `worktree activity` prints in brackets (`id` with `--json`). Neither works on Slack events, whose read state is Slack's. Your own events and CI runs in progress can't be marked unread.
@@ -231,7 +231,7 @@ worktree completion <shell>  # Shell completions (setup installs these for you)
 - **Agent skills:** `worktree setup` offers to install skills that teach AI agents these commands (see the [setup guide](setup.md#agent-skills)). `worktree agent-help` prints the main one's text.
 - **Finding things:** an agent given a loose question should run a few `search` queries, list the candidates, and run `slack thread --messages` only once you confirm which thread, because reading whole threads costs context.
 - **JSON:** every read command takes `--json`, which prints an object with `"schema_version": 1` and snake_case fields, never a bare array.
-- **Exit codes:** 0 for success; 1 for nothing found (only where a command says so: `attention`, `activity --unread`, `search`, `slack thread`, `pr-threads list` with no PR); 2 for any error.
+- **Exit codes:** 0 for success; 1 for nothing found (only where a command says so: `attention`, `activity --unread`, `search`, `slack thread`, `pr-threads list` with no PR); 2 for any error (and for an ambiguous `slack thread` name, which prints its candidates).
 - **Colors:** nothing prints ANSI colors when piped or when `NO_COLOR` is set.
 - **`--worktree`:** takes `.` or a registered worktree path.
 - **`--as-agent`:** every command accepts it, and it's implied when running under Claude Code or agent-handler. On `tasks`, it records the change as made by an AI agent. Agent changes can notify you in the UI, and an agent can't undo a change you made.

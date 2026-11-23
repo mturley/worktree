@@ -75,7 +75,7 @@ the registry PR"). Turn that into a few cheap searches, show candidates, and rea
 Slack thread only once they say to. Reading threads eagerly burns your context.
 
 1. `worktree search <terms…> --json`. Terms are ANDed, case-insensitive substrings:
-   no phrases or operators, so use distinctive words, a key (`RHAISTRAT-304`) or a
+   no phrases or operators, so use distinctive words, a key (`RHOAIENG-1234`) or a
    name. Map time words to `--since` (`24h`, `7d`, RFC 3339), source words to
    `--source github|jira|slack|tasks|links`, "here" or "this worktree" to
    `--worktree .`, "unread" to `--unread`, and "people, not bots" to `--humans-only`.
