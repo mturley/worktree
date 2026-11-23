@@ -21,9 +21,9 @@ The CLI lets you and your AI agents create, manage and navigate worktrees and ev
 
 ### The local web UI
 
-The UI gives each worktree a live inbox of its outside activity with configurable push notifications, an environment view (vars, listening ports and kubeconfig context), a code view (diff, PR comments and local comments for your AI), a lightweight embedded Slack thread client for quick replies, a heirarchy tree for Jira issues, a feature-rich to-do list and a notes field. Its home page gives you a combined view across all worktrees and a powerful search bar. It works great on your phone. It also has a ton of optional integrations with [cmux](https://cmux.com/), like a tab/pane manager and two-way focus sync so you can keep the worktree details for the active cmux workspace up on a second screen.
+The UI gives each worktree a live inbox of its outside activity with configurable push notifications, an environment view (vars, listening ports and kubeconfig context), a code view (diff, PR comments and local comments for your AI), a lightweight embedded Slack thread client for quick replies, a hierarchy tree for Jira issues, a feature-rich to-do list and a notes field. Its home page gives you a combined view across all worktrees and a powerful search bar. It works great on your phone. It also has a ton of optional integrations with [cmux](https://cmux.com/), like a tab/pane manager and two-way focus sync so you can keep the worktree details for the active cmux workspace up on a second screen.
 
-### The  macOS menu bar app
+### The macOS menu bar app
 
 A mini version of the web UI lives in your menu bar for a quick view of your tasks and unread activity.
 
@@ -35,7 +35,7 @@ They may be out of date, I'm adding features to this thing all the time.
 
 ![The worktree web UI on a worktree details page with a PR selected](docs/images/hero-detail.png)
 
-![The worktree showing `wt list` and `wt cd` examples](docs/images/cli-detail.png)
+![The worktree CLI showing `wt list` and `wt cd` examples](docs/images/cli-detail.png)
 
 -----
 > HEY FYI - I'm in the middle of rewriting my README, below this point there are missing screenshots and some sections that I want to reorganize and slim down.
