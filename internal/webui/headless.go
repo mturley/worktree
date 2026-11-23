@@ -11,6 +11,7 @@ package webui
 //	WorktreeResources  GET /api/resources
 //	WatcherStatuses    GET /api/watchers
 //	ScanListeners      the listeners stream's scan
+//	Search             the search bar grouped answer (the dropdown rows)
 
 // ResourceDTO is one resource as the web UI's cards show it.
 type ResourceDTO = resourceDTO
@@ -23,3 +24,6 @@ type AllResource = allResourceDTO
 
 // WatcherStatus is one poller's health.
 type WatcherStatus = watcherStatusDTO
+
+// SearchMatch is why a search hit matched.
+type SearchMatch = searchMatch
