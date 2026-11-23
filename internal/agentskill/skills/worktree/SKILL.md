@@ -46,7 +46,8 @@ until then.
   (absent if never), and `resource_updated_at` is the resource's own time. Its format
   depends on the source: RFC 3339 for PRs, `2026-10-21T14:12:17.410+0000` for Jira,
   and a Slack timestamp (`1787257539.775119`) for Slack. Parse by resource type, and
-  don't compare it across types.
+  don't compare it across types. `slack thread` is the exception: it prints Slack
+  timestamps as RFC 3339 (`started_at`, `updated_at`).
 
 ## "What's going on?" and "what needs me?"
 
@@ -67,11 +68,45 @@ The list is a starting point, not the answer:
 
 Add `--worktree .` to cover only the current worktree.
 
+## Finding things
+
+The user asks loosely ("the thread about InferencePool RBAC", "what did Emily say on
+the registry PR"). Turn that into a few cheap searches, show candidates, and read a
+Slack thread only once they say to. Reading threads eagerly burns your context.
+
+1. `worktree search <terms…> --json`. Terms are ANDed, case-insensitive substrings:
+   no phrases or operators, so use distinctive words, a key (`RHAISTRAT-304`) or a
+   name. Map time words to `--since` (`24h`, `7d`, RFC 3339), source words to
+   `--source github|jira|slack|tasks|links`, "here" or "this worktree" to
+   `--worktree .`, "unread" to `--unread`, and "people, not bots" to `--humans-only`.
+   Narrow events with `--type <type or prefix*>`; `--limit N` caps each group.
+2. Read the groups: `worktrees`, `resources`, `tasks`, `events` (with `--worktree`,
+   only `resources` and `events`). Each hit has its match: `field`, `snippet`, and
+   `via_key`/`via_field` when a worktree matched through a resource. Event hits carry
+   no body, so quote the snippet and don't claim more. Group event hits by `resource`.
+3. Nothing (exit 1)? Retry with fewer or different terms, then `--archived`, which
+   widens to archived events, resources and tasks (not with `--worktree`).
+4. A Slack hit is a resource of type `slack`. List the candidates with
+   `worktree slack thread <ref> --json` (a URL, `slack:<id>`, or a custom name): that
+   is the summary only. Show channel, custom name or title, author, first message,
+   `started_at` and `updated_at`, and ask which one.
+5. **Never run `slack thread --messages` until the user says to, even when there is
+   only one candidate.** Then read it and answer from it.
+6. If `complete` is false, fewer replies are cached than Slack reported: say so.
+   Exit 2 with `"ambiguous": true` is a candidate list, not a failure. Show its
+   `candidates` and ask. Exit 1 means no such thread is followed.
+
+PRs and Jira issues need no step 4: the hit's `resource` and its events answer
+"which PR" and "did anyone update it".
+
 ## Drill-downs
 
 **What happened since yesterday (standup):** `worktree activity --since 24h --json`.
 Narrow with `--unread`, `--source github` (or `jira`, `slack`, `tasks`),
 `--worktree .`, `--resource <url>` and `--limit`. Use `--since 72h` after a weekend.
+
+**Find X** (a PR, Jira issue, Slack thread, task, or "what did Andrew say"): see
+"Finding things".
 
 **Where is X?** `worktree resources list --all --json` lists every followed
 resource once, with the worktrees following it.

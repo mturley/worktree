@@ -188,7 +188,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only), `q` (search; see "Search") | `timelineResponse` |
 | GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only`, `q` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
-| GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
+| GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab"); `archived=true` also appends archived resources (`archived`, `last_followed_by`) |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts, cleared_unread?}` — the cursor before (null if none) and after, and any single-event unread marks it cleared, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
@@ -3268,6 +3268,28 @@ Worktrees matching through their resources is the single switch
   the cached Jira reporter name.
 - No index. If the first page measures slower than 150 ms on real data a
   follow-up can add FTS5 in worktree's own schema.
+
+### CLI
+
+`worktree search <terms…>` (`cmd/search.go`) calls `Server.Search`
+(`search_api.go`); the handlers and the CLI share it. Events go through
+`Timeline` with the same `q` the feed uses (`searchSQL` and its `match`);
+worktrees, resources and tasks are matched in Go with `matchWorktree`,
+`matchResource` and `matchTask` (`search_match.go`), so the fields and
+priority order above are the CLI's too. `--archived` adds
+`ArchivedResources`, archived events and archived tasks, and is refused with
+`--worktree`. Hits carry `field`/`snippet` (and `via_key`/`via_field`) but
+never an event body.
+
+The Go matchers and `ui/src/lib/search.ts` must agree. Both read one fixture,
+`ui/src/lib/testdata/search-parity.json`, from `TestSearchParityFixture`
+(`search_match_test.go`) and `searchParity.test.ts`. A new matching rule goes
+in that fixture first.
+
+`worktree slack thread` reads a cached thread through `Server.SlackThread`
+(summary) and `Server.SlackThreadMessages` (`slack_thread_read.go`), never
+Slack. The default output is the summary only, on purpose: the agent skill has
+the agent read messages only when the user asks.
 
 ### Frontend map
 
