@@ -164,7 +164,7 @@ Tasks are to-dos that live with the context they're about. Link a task to a work
 
 ### Find anything
 
-Search filters the page you're on as you type. On the home page it narrows worktrees, activity, resources and tasks together. On a worktree page it stays within that worktree. Suggestions show what each match is and why it matched, and the query lives in the URL, so Back and reload keep it.
+Search filters the page you're on as you type. On the home page it narrows worktrees, activity, resources and tasks together. On a worktree page it stays within that worktree. Suggestions show what each match is and why it matched, and the query lives in the URL, so Back and reload keep it. **Include archived** reaches resources and tasks that no worktree follows any more. The same search is available from the terminal as `worktree search`, for scripts and agents.
 
 <!-- SCREENSHOT TODO: search.png — dark mode. Home page narrowed by a search, suggestions open. -->
 
@@ -223,6 +223,7 @@ Every setting can be edited in the UI's **Settings** window, including the GitHu
 The CLI is designed for AI coding agents as much as for you.
 
 - **An agent skill.** `worktree setup` offers to install worktree's skills for AI agents, linked into `~/.agents/skills` (read by Codex and pi) and Claude Code's skills directory. The main skill teaches an agent to use worktree. With it installed, an agent can answer *"what needs my attention?"*, *"what happened on my PRs today?"* or *"which worktrees can I clean up?"* from your local data. It doesn't make changes without your say-so. For an agent without the skill, `worktree agent-help` prints the same text.
+- **Loose questions, answered from your data.** Ask *"which PR was the one about deployment status events?"* or *"find the Slack thread that discussed RHAISTRAT-304"* and the agent runs `worktree search` over your local data, then lists the candidates it found. It reads a Slack thread's messages (`worktree slack thread --messages`) only after you say which one, since reading threads eagerly would burn through its context. By default `worktree slack thread` gives just a summary: who started it, how many replies, which worktrees follow it.
 - **`worktree attention`** lists what deserves a look, most important first:
   - resources with unread activity
   - PRs where your review is requested, changes are requested or CI is failing
@@ -281,6 +282,8 @@ The CLI covers everything the UI does with worktrees, resources and tasks, and e
 | `worktree tasks list` | List the current worktree's open tasks |
 | `worktree attention` | What deserves your attention, most important first |
 | `worktree activity [--since 24h]` | Recent activity across your worktrees |
+| `worktree search <terms…>` | Search worktrees, resources, tasks and activity, as the UI's search bar does |
+| `worktree slack thread <url \| name>` | Summarize a followed Slack thread from the local cache (`--messages` for the messages) |
 | `worktree status` | Whether the UI is running and the data is fresh |
 | `worktree ui` | Start the web UI |
 | `worktree setup` | Configure (or re-check) everything |
