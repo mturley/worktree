@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	watcherdb "github.com/mturley/watcher/db"
 	"github.com/mturley/worktree/internal/resourceurl"
@@ -352,16 +351,25 @@ func (s *Server) synthesizedRoot(r AllResource, evs []slackEventRow) *SlackMessa
 	return nil
 }
 
-// firstMessageExcerpt is text cut to at most firstMessageMax runes at a word
-// boundary, "…" marking the cut. It reuses snippet's cutter, anchored on the
-// text's first rune.
+// firstMessageExcerpt is text with whitespace collapsed, cut to at most
+// firstMessageMax runes including the closing "…", at a word boundary. A first
+// word too long to fit is cut mid-word rather than reduced to nothing.
 func firstMessageExcerpt(text string) string {
-	f := strings.Fields(text)
-	if len(f) == 0 {
-		return ""
+	flat := []rune(strings.Join(strings.Fields(text), " "))
+	if len(flat) <= firstMessageMax {
+		return string(flat)
 	}
-	first := unicode.ToLower([]rune(f[0])[0])
-	return snippetRadiusAround(text, string(first), firstMessageMax-1)
+	keep := firstMessageMax - 1 // room for "…"
+	end := keep
+	if flat[keep] != ' ' {
+		for end > 0 && flat[end-1] != ' ' {
+			end--
+		}
+		if end == 0 {
+			end = keep
+		}
+	}
+	return strings.TrimSpace(string(flat[:end])) + "…"
 }
 
 // cachedReplyCount is the thread's reply_count from its cached state: 0 when

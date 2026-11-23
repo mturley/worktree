@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	watcher "github.com/mturley/watcher"
@@ -38,12 +39,11 @@ func followSlack(t *testing.T, conn *sql.DB, wt, id, state string) {
 	}
 }
 
-var slackEvN int
+var slackEvN atomic.Int64
 
 func slackEv(t *testing.T, conn *sql.DB, id, typ, ts, ext, author, body string) {
 	t.Helper()
-	slackEvN++
-	e := watcher.Event{ID: fmt.Sprintf("se%d", slackEvN), TS: ts, ExternalTS: &ext, Source: "slack",
+	e := watcher.Event{ID: fmt.Sprintf("se%d", slackEvN.Add(1)), TS: ts, ExternalTS: &ext, Source: "slack",
 		Type: watcher.EventType(typ), Title: "t", Body: &body}
 	if author != "" {
 		a, aid := author, "U"+author
@@ -239,5 +239,24 @@ func TestSlackThreadArchived(t *testing.T) {
 	msgs, err := s.SlackThreadMessages(id)
 	if err != nil || len(msgs) != 1 || msgs[0].Text != "gone but cached" {
 		t.Errorf("messages: %+v, %v", msgs, err)
+	}
+}
+
+func TestFirstMessageExcerptBound(t *testing.T) {
+	t.Parallel()
+	// A space at index 200: the first 200 runes end exactly on a word.
+	onBoundary := strings.Repeat("a", 199) + " b" + strings.Repeat(" c", 50)
+	longURL := "https://example.com/" + strings.Repeat("x", 400)
+	for name, text := range map[string]string{"space at 200": strings.Repeat("a", 200) + " tail", "boundary": onBoundary, "long word": longURL} {
+		got := firstMessageExcerpt(text)
+		if n := len([]rune(got)); n > 200 || !strings.HasSuffix(got, "…") {
+			t.Errorf("%s: %d runes: %q", name, n, got)
+		}
+	}
+	if got := firstMessageExcerpt(longURL); len([]rune(got)) < 100 {
+		t.Errorf("long first word reduced to %q", got)
+	}
+	if got := firstMessageExcerpt("short  text"); got != "short text" {
+		t.Errorf("short: %q", got)
 	}
 }
