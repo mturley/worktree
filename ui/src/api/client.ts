@@ -241,7 +241,8 @@ export const api = {
   taskFromEvent: (key: string, snapshot?: TaskEventSnapshot, path?: string) =>
     postJSON<TaskDetail>("/api/tasks/from-event", { key, snapshot, path }),
   worktrees: () => fetchJSON<WorktreeSummary[]>("/api/worktrees"),
-  allResources: () => fetchJSON<AllResourceDTO[]>("/api/all-resources"),
+  allResources: (opts?: { archived?: boolean }) =>
+    fetchJSON<AllResourceDTO[]>(opts?.archived ? "/api/all-resources?archived=true" : "/api/all-resources"),
   /**
    * One notification toggle: worktree-wide without type/id, else one
    * resource. Turning one on makes the server send a test notification,

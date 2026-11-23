@@ -7,6 +7,7 @@ package webui
 //
 //	WorktreeSummaries  GET /api/worktrees
 //	AllResources       GET /api/all-resources
+//	ArchivedResources  GET /api/all-resources?archived=true (appended to AllResources)
 //	WorktreeResources  GET /api/resources
 //	WatcherStatuses    GET /api/watchers
 //	ScanListeners      the listeners stream's scan

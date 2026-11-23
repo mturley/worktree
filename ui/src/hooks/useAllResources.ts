@@ -7,5 +7,5 @@ import { api } from "../api/client"
  * notify toggles) refreshes this list too; no worktree path is "__all__".
  */
 export function useAllResources() {
-  return useQuery({ queryKey: ["resources", "__all__"], queryFn: api.allResources })
+  return useQuery({ queryKey: ["resources", "__all__"], queryFn: () => api.allResources() })
 }
