@@ -33,8 +33,9 @@ type gitCacheEntry struct {
 }
 
 type gitCall struct {
-	done chan struct{}
-	val  gitComputed
+	done    chan struct{}
+	val     gitComputed
+	waiters int // requests sharing this call; guarded by worktreeGitCache.mu
 }
 
 // worktreeGitCache holds one entry per worktree path in two tiers (see
@@ -64,6 +65,7 @@ func newWorktreeGitCache() *worktreeGitCache {
 func (c *worktreeGitCache) get(path, prKey string, compute func() gitComputed, refresh func(gitComputed) (gitComputed, bool)) gitComputed {
 	c.mu.Lock()
 	if call, ok := c.inflight[path]; ok {
+		call.waiters++
 		c.mu.Unlock()
 		<-call.done
 		return call.val

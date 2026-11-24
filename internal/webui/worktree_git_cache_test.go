@@ -220,8 +220,24 @@ func TestWorktreeGitCache_Singleflight(t *testing.T) {
 			results[i] = c.get(wt, "", compute, nil)
 		}(i)
 	}
-	// Let every goroutine reach get before releasing the one compute.
-	time.Sleep(50 * time.Millisecond)
+	// Release the one compute only once the other four requests have joined
+	// it, so none can arrive late and start a second compute.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		joined := 0
+		if call, ok := c.inflight[wt]; ok {
+			joined = call.waiters
+		}
+		c.mu.Unlock()
+		if joined == len(results)-1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d requests joined the in-flight compute", joined, len(results)-1)
+		}
+		time.Sleep(time.Millisecond)
+	}
 	close(release)
 	wg.Wait()
 	if n := calls.Load(); n != 1 {
