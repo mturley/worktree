@@ -28,7 +28,12 @@ import { SearchBar } from "../components/search/SearchBar"
 import { SearchContext } from "../components/search/SearchContext"
 import { buildSuggestions } from "../components/search/suggestions"
 import { useSearchQuery } from "../hooks/useSearchQuery"
-import { useAllResources } from "../hooks/useAllResources"
+import { useAllResources, useArchivedResources } from "../hooks/useAllResources"
+import { useHomeArchived } from "../hooks/useHomeArchived"
+import { useTasks } from "../hooks/useTasks"
+import { ArchivedResourceModal } from "../components/search/ArchivedResourceModal"
+import { followResourceState } from "../lib/openEvent"
+import type { AllResourceDTO } from "../api/types"
 import { matchWorktree } from "../lib/search"
 import { useCmux } from "../api/cmux"
 import { useWorktreeSort } from "../hooks/useWorktreeSort"
@@ -70,6 +75,13 @@ export function HomePage() {
   // The same cached query the Resources tab uses.
   const allResources = useAllResources()
   const wts = useWorktrees()
+  // Include archived: one setting for the Activity panel and the search
+  // dropdown. On, the dropdown also reaches archived resources and tasks,
+  // fetched only while it is.
+  const [archived, setArchived] = useHomeArchived()
+  const archivedResources = useArchivedResources(archived)
+  const archivedTasks = useTasks({ kind: "all" }, { completed: true, archived: true }, { enabled: archived })
+  const [archivedPick, setArchivedPick] = useState<AllResourceDTO | null>(null)
   // The Activity feed, its controls, filters and modals; see useActivityPanel.
   const activity = useActivityPanel({
     unreadOnly,
@@ -77,6 +89,7 @@ export function HomePage() {
     hasUnread: unreadBadge(wts.data).unread,
     search: { terms: search.terms, debouncedQ: search.debouncedQ, queryText },
     select: "route",
+    archived: [archived, setArchived],
   })
   // The Activity source toggles narrow the worktree cards too.
   const sources = activity.sources
@@ -278,8 +291,16 @@ export function HomePage() {
       w, workspaceTitles: (cmux.data?.available ? cmux.data.matches?.[w.path] ?? [] : []).map((m) => m.title),
       resources: resourcesByPath.get(w.path) ?? w.focus_resources,
     })),
-    resources: resourcesView.shown.map((r) => ({ r, worktreePath: r.worktrees[0]?.path })),
-    tasks: tasks.tasks,
+    resources: [
+      ...resourcesView.shown.map((r) => ({ r, worktreePath: r.worktrees[0]?.path })),
+      ...(archived ? archivedResources.data ?? [] : [])
+        .filter((r) => r.archived)
+        .map((r) => ({ r, archived: true })),
+    ],
+    tasks: [
+      ...tasks.tasks,
+      ...(archived ? (archivedTasks.data ?? []).filter((t) => t.archived && !tasks.tasks.some((x) => x.id === t.id)) : []),
+    ],
     events: activity.events,
     go: {
       worktree: (p) => navigate(`/worktree/${encodeURIComponent(p)}`),
@@ -288,6 +309,7 @@ export function HomePage() {
         if (followers.length > 1) setChoosing({ r, worktrees: followers })
         else if (p) openResourceIn(p, r)
       },
+      archivedResource: (r) => setArchivedPick(archivedResources.data?.find((x) => x.type === r.type && x.id === r.id) ?? { worktrees: [], ...r }),
       // An archived or worktree-less event opens its details; see pickEvent.
       event: activity.pickEvent,
       // Goes to the task's worktree, as a picked event does; see pickTask.
@@ -310,6 +332,7 @@ export function HomePage() {
       onEscape={narrowing.clearAll}
       escapeActive={escClears}
       onEscapeIdle={home ? () => navigate(homeWorktreeHref(home)) : undefined}
+      archivedToggle={{ value: archived, onChange: setArchived }}
     />
   )
   // The following banner heads the page too, not only worktree pages: with
@@ -325,6 +348,22 @@ export function HomePage() {
   const detailsModal = (
     <>
       {activity.modals}
+      <ArchivedResourceModal
+        r={archivedPick}
+        onClose={() => setArchivedPick(null)}
+        onFollow={(path) => {
+          const r = archivedPick
+          setArchivedPick(null)
+          if (!r) return
+          navigate(`/worktree/${encodeURIComponent(path)}`, {
+            state: followResourceState({
+              url: r.url,
+              name: r.custom_name || undefined,
+              description: r.custom_description || undefined,
+            }),
+          })
+        }}
+      />
       <ChooseWorktreeModal
         r={choosing?.r ?? null}
         worktrees={choosing?.worktrees ?? []}

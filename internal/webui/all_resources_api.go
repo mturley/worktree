@@ -25,6 +25,13 @@ type allResourceDTO struct {
 	// Mine: a PR the user opened, or a Jira issue assigned to or reported by
 	// the user. Always false until selfid has resolved the source.
 	Mine bool `json:"mine,omitempty"`
+	// Archived: no worktree follows the resource any more. Only set by
+	// ArchivedResources; Worktrees is then empty.
+	Archived bool `json:"archived,omitempty"`
+	// LastFollowedBy: the worktrees that last followed an archived resource,
+	// newest unfollow first. Repo and branch are empty when the path is no
+	// longer registered.
+	LastFollowedBy []resourceWorktree `json:"last_followed_by,omitempty"`
 }
 
 // handleAllResources lists every resource followed by any registered
@@ -35,6 +42,14 @@ func (s *Server) handleAllResources(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if r.URL.Query().Get("archived") == "true" {
+		archived, err := s.ArchivedResources()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		out = append(out, archived...)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

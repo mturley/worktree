@@ -25,11 +25,12 @@ function sameScope(key: readonly unknown[], scopeKey: unknown[]): boolean {
   return scopeKey.every((part, i) => key[i] === part)
 }
 
-export function useTasks(scope: TaskScope, opts: { completed: boolean; archived: boolean }) {
+export function useTasks(scope: TaskScope, opts: { completed: boolean; archived: boolean }, { enabled = true }: { enabled?: boolean } = {}) {
   const scopeKey = taskScopeKey(scope)
   return useQuery({
     queryKey: [...scopeKey, { completed: opts.completed, archived: opts.archived }],
     queryFn: () => api.tasks(scope, opts),
+    enabled,
     // Toggling Show completed or Include archived changes the key: keep
     // showing the old list meanwhile rather than dropping to "Loading tasks…",
     // which would unmount the list's DndContext. Only within one scope: another

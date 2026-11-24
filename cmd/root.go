@@ -76,6 +76,10 @@ func exitCode(err error, stderr io.Writer) int {
 		return 0
 	case errors.Is(err, ErrNothingFound):
 		return 1
+	case errors.Is(err, ErrPrinted):
+		// The command already printed its result; the message goes to stderr.
+		fmt.Fprintln(stderr, err)
+		return 2
 	default:
 		fmt.Fprintln(stderr, err)
 		return 2

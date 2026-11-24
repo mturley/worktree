@@ -203,6 +203,10 @@ export interface AllResourceDTO extends ResourceDTO {
   worktrees: ResourceWorktree[]
   /** A PR the user opened, or a Jira issue assigned to or reported by them. */
   mine?: boolean
+  /** No worktree follows it any more (only with `archived: true`); `worktrees` is then empty. */
+  archived?: boolean
+  /** For archived resources: worktrees that last followed it, newest first. */
+  last_followed_by?: ResourceWorktree[]
 }
 
 export interface GitStatus {

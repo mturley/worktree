@@ -907,3 +907,70 @@ describe("HomePage tasks", () => {
     expect(within(panel).queryByTestId("task-list-body")).toBeNull()
   })
 })
+
+describe("HomePage Include archived in search", () => {
+  const archivedRes = {
+    type: "pr", id: "o/r#77", url: "https://gh/pr/77", primary: false, title: "Zebra retired",
+    worktrees: [], archived: true, last_followed_by: [{ path: "/wt/old", repo: "odh", branch: "old-branch" }],
+  }
+  const archivedTask: Task = { ...homeTask, id: 2, ref: "T2", title: "Zebra chores", archived: true }
+
+  beforeEach(() => {
+    setViewport("wide")
+    vi.spyOn(api, "allResources").mockImplementation(async (opts) => [
+      { type: "pr", id: "o/r#9", url: "https://gh/pr/9", primary: true, title: "Zebra live", state: "OPEN",
+        worktrees: [{ path: "/wt/foo", repo: "odh", branch: "my-branch" }] },
+      ...(opts?.archived ? [archivedRes] : []),
+    ])
+    vi.spyOn(api, "tasks").mockImplementation(async (_scope, opts) => [
+      homeTask, ...(opts?.archived ? [archivedTask] : []),
+    ])
+  })
+
+  // Rows are found by their text: the matched term is highlighted, splitting it.
+  const row = (box: HTMLElement, text: string) =>
+    within(box).findAllByRole("option").then((rows) => rows.find((r) => r.textContent?.includes(text)))
+  const dropdown = async () => {
+    await userEvent.type(screen.getByRole("searchbox"), "zebra")
+    return screen.findByTestId("search-suggestions")
+  }
+
+  it("shows neither archived resources nor tasks, and fetches none, while off", async () => {
+    wrap()
+    const box = await dropdown()
+    await waitFor(async () => expect(await row(box, "Zebra live")).toBeTruthy())
+    expect(await row(box, "Zebra retired")).toBeUndefined()
+    expect(await row(box, "Zebra chores")).toBeUndefined()
+    expect(vi.mocked(api.allResources).mock.calls.some(([o]) => o?.archived)).toBe(false)
+    expect(vi.mocked(api.tasks).mock.calls.some(([, o]) => o?.archived)).toBe(false)
+  })
+
+  it("the dropdown's switch and the Activity panel's are one setting", async () => {
+    wrap()
+    const box = await dropdown()
+    const activitySwitch = () => screen.getAllByRole("switch", { name: "Include archived" })
+      .find((el) => !box.contains(el))!
+    expect(activitySwitch()).not.toBeChecked()
+    await userEvent.click(within(box).getByRole("switch", { name: "Include archived" }))
+    await waitFor(() => expect(activitySwitch()).toBeChecked())
+    expect(mocks.timelineArgs.at(-1)?.[0]).toBe(true)
+    await userEvent.click(activitySwitch())
+    await waitFor(() => expect(activitySwitch()).not.toBeChecked())
+    await userEvent.click(screen.getByRole("searchbox"))
+    expect(within(await screen.findByTestId("search-suggestions")).getByRole("switch", { name: "Include archived" })).not.toBeChecked()
+  })
+
+  it("on, lists archived resources (marked) and tasks, and picking the resource opens its modal", async () => {
+    wrap()
+    const box = await dropdown()
+    await userEvent.click(within(box).getByRole("switch", { name: "Include archived" }))
+    await waitFor(async () => expect(await row(box, "Zebra retired")).toBeTruthy())
+    expect(await row(box, "Zebra chores")).toBeTruthy()
+    const retired = (await row(box, "Zebra retired"))!
+    expect(within(retired).getByText("archived")).toBeInTheDocument()
+    await userEvent.pointer({ keys: "[MouseLeft>]", target: retired })
+    const modal = await screen.findByRole("dialog")
+    expect(within(modal).getByText(/Last followed in/)).toHaveTextContent("old-branch")
+    expect(within(modal).getByRole("button", { name: /Follow/ })).toBeInTheDocument()
+  })
+})

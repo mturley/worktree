@@ -54,7 +54,7 @@ export function useTaskScopeResources(task: TaskDetail): ResourceDTO[] {
   const perWorktree = useQueries({
     queries: paths.map((path) => ({ queryKey: ["resources", path], queryFn: () => api.worktreeResources(path) })),
   })
-  const all = useQuery({ queryKey: ["resources", "__all__"], queryFn: api.allResources, enabled: global })
+  const all = useQuery({ queryKey: ["resources", "__all__"], queryFn: () => api.allResources(), enabled: global })
 
   // Recomputed each render: a few hundred entries at most, and useQueries
   // hands back a new array every render, so a memo would never hit.

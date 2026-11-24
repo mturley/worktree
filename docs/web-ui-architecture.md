@@ -188,7 +188,7 @@ contract; `ui/src/api/types.ts` must match it field-for-field.
 | GET | `/api/timeline` | `archived` (`"true"`/else false), `limit` (1-500, default 100), `before` (RFC3339 ts, exclusive upper bound), `resource_types`, `event_types` (exact event types, or a prefix ending in `*` such as `ci_*`; the Activity subfilters, see `ui/src/lib/eventTypeFilter.ts`), `unread_only` (`"true"`: unread events only), `q` (search; see "Search") | `timelineResponse` |
 | GET | `/api/worktree-timeline` | `path` (required, worktree path), `limit`, `before`, `resource_type` + `resource_id` (optional, filters to one resource's events; must be supplied together or the request 400s), `resource_types`, `event_types`, `unread_only`, `q` | `timelineResponse` |
 | GET | `/api/worktree-resources` | `path` (required) | `[]resourceDTO` |
-| GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab") |
+| GET | `/api/all-resources` | — | `[]allResourceDTO` (every followed resource once, with its worktrees; see "Home page Resources tab"); `archived=true` also appends archived resources (`archived`, `last_followed_by`) |
 | POST | `/api/worktrees/poll` | `path` (required) | `{"polled": bool}` |
 | POST | `/api/resource-meta` | body: `{type, id, name, description}` | — |
 | POST | `/api/resource-read` | body: `{type, id, through_ts}` | `{previous_ts, last_read_ts, cleared_unread?}` — the cursor before (null if none) and after, and any single-event unread marks it cleared, for an undo; 400 unless `through_ts` is RFC3339 (`validThroughTS`: a Slack ts never belongs here) |
@@ -3269,6 +3269,34 @@ Worktrees matching through their resources is the single switch
 - No index. If the first page measures slower than 150 ms on real data a
   follow-up can add FTS5 in worktree's own schema.
 
+### CLI
+
+`worktree search <terms…>` (`cmd/search.go`) calls `Server.Search`
+(`search_api.go`); the handlers and the CLI share it. Events go through
+`Timeline` with the same `q` the feed uses (`searchSQL` and its `match`);
+worktrees, resources and tasks are matched in Go with `matchWorktree`,
+`matchResource` and `matchTask` (`search_match.go`), so the fields and
+priority order above are the CLI's too. `--archived` adds
+`ArchivedResources`, archived events and archived tasks, and is refused with
+`--worktree`. Hits carry `field`/`snippet` (and `via_key`/`via_field`) but
+never an event body.
+
+One deliberate divergence from the UI: `--source` narrows a worktree's
+via-resources in both, but the UI also drops a worktree card that follows
+nothing of the selected sources. The CLI keeps it, so `worktree search
+--source slack <term>` can return a worktree matched only on its branch, repo,
+name or notes.
+
+The Go matchers and `ui/src/lib/search.ts` must agree. Both read one fixture,
+`ui/src/lib/testdata/search-parity.json`, from `TestSearchParityFixture`
+(`search_match_test.go`) and `searchParity.test.ts`. A new matching rule goes
+in that fixture first.
+
+`worktree slack thread` reads a cached thread through `Server.SlackThread`
+(summary) and `Server.SlackThreadMessages` (`slack_thread_read.go`), never
+Slack. The default output is the summary only, on purpose: the agent skill has
+the agent read messages only when the user asks.
+
 ### Frontend map
 
 - `lib/search.ts` (pure): `parseQuery`, `matchWorktree`, `matchResource`,
@@ -3383,6 +3411,20 @@ filtering is independent.
   pseudo-resource is nothing to select. The routing lives in
   `suggestions.ts`, not on the row, so Enter and a click agree and the row
   stays display-only.
+- **Include archived (home page only).** `useHomeArchived` (`hooks/useHomeArchived.ts`)
+  is ONE setting, owned by `HomePage` and handed to both `useActivityPanel`
+  (its `archived` option; /mini omits it and keeps its own) and
+  `SearchBar`'s `archivedToggle` prop, which puts the same `ArchivedToggle`
+  at the top of the dropdown. Flipping either flips both; not persisted. On,
+  the dropdown also reaches archived resources (`useArchivedResources`,
+  `api.allResources({ archived: true })` (`GET /api/all-resources?archived=true`, see the endpoint table), keyed `["resources", "__archived__"]`,
+  filtered to rows with `archived`) and archived tasks (`useTasks` with
+  `{ completed: true, archived: true }`, filtered to `t.archived`); both
+  queries are `enabled` only while it is on. An archived resource's row
+  carries an "archived" badge and picks through `go.archivedResource`, which
+  opens the read-only `ArchivedResourceModal` (the row, "Last followed in …",
+  an Open link, `FollowInWorktreeMenu` navigating as `EventDetailsModal`'s
+  `followIn` does). The worktree page and /mini pass no toggle.
 - Sticky section headings with counts; up to 640 px wide and 70vh tall when
   wide, the full screen width (less the gutter) when narrow.
 - A hint bar heads it, also when nothing matches ("Nothing matches your

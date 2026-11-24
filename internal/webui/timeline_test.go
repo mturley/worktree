@@ -820,3 +820,66 @@ func TestTimeline_AuthorType(t *testing.T) {
 		t.Fatalf("author types = %v, want bot1=bot none1=empty", got)
 	}
 }
+
+func TestTimelineQueryExportedFilters(t *testing.T) {
+	t.Parallel()
+	conn, err := wdb.OpenAt(filepath.Join(t.TempDir(), "w.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	wtPath := testgit.Worktree(t)
+	registry.Register(conn, registry.Entry{Path: wtPath, Repo: "odh", RepoRoot: "/r", Branch: "b1", CreatedAt: "2026-08-13T00:00:00Z"})
+	resources.Add(conn, wtPath, resources.Resource{Type: "pr", ID: "o/r#1", URL: "u1"})
+
+	now := time.Now().UTC()
+	at := func(m int) string { return now.Add(time.Duration(-m) * time.Minute).Format(time.RFC3339) }
+	insertEvent(t, conn, "n1", at(1), "github", "pr_comment", "a needle here", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "n2", at(2), "github", "pr_comment", "plain comment", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "n3", at(3), "github", "ci_failed", "ci needle", "pr", "o/r#1", "u1")
+	insertEvent(t, conn, "n4", at(4), "github", "pr_comment", "bot needle", "pr", "o/r#1", "u1")
+	if _, err := conn.Exec(`UPDATE watcher_events SET author_type = 'bot' WHERE id = 'n4'`); err != nil {
+		t.Fatal(err)
+	}
+	insertEvent(t, conn, "n5", at(5), "github", "pr_comment", "archived needle", "pr", "o/r#999", "u9")
+
+	srv := &Server{DB: conn}
+	ids := func(q TimelineQuery) map[string]bool {
+		t.Helper()
+		evs, err := srv.Timeline(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, e := range evs {
+			out[e.ID] = true
+		}
+		return out
+	}
+
+	evs, err := srv.Timeline(TimelineQuery{Query: "needle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, e := range evs {
+		got[e.ID] = true
+		if e.Match == nil || e.Match.Field != "title" {
+			t.Errorf("event %s: match = %+v, want title", e.ID, e.Match)
+		}
+	}
+	if !got["n1"] || !got["n3"] || !got["n4"] || got["n2"] || got["n5"] {
+		t.Errorf("Query: got %v", got)
+	}
+	if g := ids(TimelineQuery{Query: "needle", Archived: true}); !g["n5"] {
+		t.Errorf("Archived: got %v, want n5 included", g)
+	}
+	g := ids(TimelineQuery{EventTypes: []string{"ci_*"}})
+	if len(g) != 1 || !g["n3"] {
+		t.Errorf("EventTypes: got %v, want only n3", g)
+	}
+	if g := ids(TimelineQuery{Query: "needle", HumansOnly: true}); g["n4"] || g["n3"] || !g["n1"] {
+		t.Errorf("HumansOnly: got %v", g)
+	}
+}

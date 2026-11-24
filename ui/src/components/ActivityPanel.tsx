@@ -55,6 +55,8 @@ export function useActivityPanel(opts: {
   search?: { terms: string[]; debouncedQ: string; queryText: string }
   /** "route" (home): a row opens its worktree, asking which when several follow it. "details" (mini): a row opens EventDetailsModal. */
   select: EventSelectMode
+  /** "Include archived" owned by the page (home: shared with the search dropdown); omitted, the panel keeps its own. */
+  archived?: [boolean, (v: boolean) => void]
 }): {
   controls: ReactNode
   render: (top?: ReactNode, headerStyle?: CSSProperties) => ReactNode
@@ -68,6 +70,7 @@ export function useActivityPanel(opts: {
   pickTask: (pick: TaskPick) => void
 } {
   const { unreadOnly, setUnreadOnly, hasUnread, search, select } = opts
+  const ownArchived = useState(false)
   const [, navigate] = useLocation()
   // "Make task" from an event: the global feed has no worktree to act in.
   const makeTaskFromEvent = useMakeTaskFromEvent()
@@ -75,7 +78,7 @@ export function useActivityPanel(opts: {
   // with the event's details on top. Picking a task in search routes instead
   // (pickTask).
   const { open: openTask } = useTaskModal()
-  const [archived, setArchived] = useState(false)
+  const [archived, setArchived] = opts.archived ?? ownArchived
   const [humansOnly, setHumansOnly] = useHumansOnly()
   const { sources, setSources, categories, setCategories, eventTypes } = useActivityFilter()
   // The same cached query the Resources tab uses.
